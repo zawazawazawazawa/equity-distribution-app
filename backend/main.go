@@ -6,13 +6,38 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	// "math/rand"
+	// "time"
 )
 
 type HandRange struct {
 	Hand string `json:"hand"`
 }
 
+func calculateHandEquity(hand string, opponentHandRange []string, board string) float64 {
+	// Placeholder for actual PLO equity calculation
+	totalEquity := 0.0
+	for _, opponentHand := range opponentHandRange {
+		// Simulate equity calculation with board
+		equity := simulatePLOEquity(hand, opponentHand, board)
+		totalEquity += equity
+	}
+	return totalEquity / float64(len(opponentHandRange))
+}
+
+func simulatePLOEquity(hand, opponentHand, board string) float64 {
+	// Dummy logic for simulating PLO equity
+	// Replace with actual simulation logic
+	return 0.5 // Dummy value
+}
+
 func calculateEquity(handRange string) [][]interface{} {
+	hands := strings.Split(handRange, ",")
+	var results [][]interface{}
+	for _, hand := range hands {
+		equity := calculateHandEquity(hand, []string{}, "")
+		results = append(results, []interface{}{hand, equity})
+	}
 	return [][]interface{}{
 		{"AsAh6s5h", 0.85},
 		{"KsKh6s5h", 0.80},
@@ -29,7 +54,6 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
