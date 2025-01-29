@@ -14,36 +14,36 @@ type HandRange struct {
 	Hand string `json:"hand"`
 }
 
-func calculateHandEquity(hand string, opponentHandRange []string, board string) float64 {
-	// Placeholder for actual PLO equity calculation
-	totalEquity := 0.0
-	for _, opponentHand := range opponentHandRange {
-		// Simulate equity calculation with board
-		equity := simulatePLOEquity(hand, opponentHand, board)
-		totalEquity += equity
-	}
-	return totalEquity / float64(len(opponentHandRange))
+func calculateHandEquity(yourHand string, opponentsHand string, board string) float64 {	
+	// TODO: Simulate PLO equity calculation for your hand against opponent's hand
+
+	// response dummy value
+	return 0.85
 }
 
-func simulatePLOEquity(hand, opponentHand, board string) float64 {
-	// Dummy logic for simulating PLO equity
-	// Replace with actual simulation logic
-	return 0.5 // Dummy value
-}
-
-func calculateEquity(handRange string) [][]interface{} {
-	hands := strings.Split(handRange, ",")
+func calculateEquity(yourHands []string, OpponentsHands []string) [][]interface{} {
 	var results [][]interface{}
-	for _, hand := range hands {
-		equity := calculateHandEquity(hand, []string{}, "")
-		results = append(results, []interface{}{hand, equity})
+	for _, yourHand := range yourHands {
+		totalEquity := 0.0
+
+		for _, opponentsHand := range OpponentsHands {
+
+			// print yourHand and opponentsHand
+			log.Printf("Your Hand: %s", yourHand)
+			log.Printf("Opponents Hand: %s", opponentsHand)
+
+			// define the board
+			board := "2c3d4h"
+
+			equity := calculateHandEquity(yourHand, opponentsHand, board)
+			totalEquity += equity
+		}
+
+		averageEquity := totalEquity / float64(len(OpponentsHands))
+		results = append(results, []interface{}{yourHand, averageEquity})
 	}
-	return [][]interface{}{
-		{"AsAh6s5h", 0.85},
-		{"KsKh6s5h", 0.80},
-		{"QsQh6s5h", 0.75},
-		{"JsJh6s5h", 0.70},
-	}
+
+	return results
 }
 
 func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
@@ -62,21 +62,28 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var hr HandRange
-	err := json.NewDecoder(r.Body).Decode(&hr)
+	var requestData struct {
+		YourHands      string `json:"yourHands"`
+		OpponentsHands string `json:"opponentsHands"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&requestData)
 	if err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
 	// Parse the hand range to extract cards
-	hands := strings.Split(hr.Hand, ",")
-	for i, hand := range hands {
-		hands[i] = strings.Split(hand, "@")[0]
+	yourHands := strings.Split(requestData.YourHands, ",")
+	for i, hand := range yourHands {
+		yourHands[i] = strings.Split(hand, "@")[0]
 	}
 
-	// Calculate equity
-	equity := calculateEquity(hr.Hand)
+	opponentHands := strings.Split(requestData.OpponentsHands, ",")
+	for i, hand := range opponentHands {
+		opponentHands[i] = strings.Split(hand, "@")[0]
+	}
+
+	equity := calculateEquity(yourHands, opponentHands)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(equity)
