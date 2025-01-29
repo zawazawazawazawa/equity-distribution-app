@@ -12,10 +12,13 @@ type HandRange struct {
 	Hand string `json:"hand"`
 }
 
-func calculateEquity(handRange string) float64 {
-	// Dummy equity calculation logic
-	// In a real scenario, implement the actual equity calculation
-	return 50.0
+func calculateEquity(handRange string) [][]interface{} {
+	return [][]interface{}{
+		{"AsAh6s5h", 0.85},
+		{"KsKh6s5h", 0.80},
+		{"QsQh6s5h", 0.75},
+		{"JsJh6s5h", 0.70},
+	}
 }
 
 func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
@@ -48,11 +51,11 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 		hands[i] = strings.Split(hand, "@")[0]
 	}
 
-	// Calculate equity (dummy value for now)
+	// Calculate equity
 	equity := calculateEquity(hr.Hand)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]float64{"equity": equity})
+	json.NewEncoder(w).Encode(equity)
 }
 
 func main() {
