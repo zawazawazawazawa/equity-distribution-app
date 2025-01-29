@@ -15,33 +15,37 @@ type HandRange struct {
 }
 
 func calculateHandEquity(yourHand string, opponentsHand string, board string) float64 {
-	return 0.5
+	fullDeck := []string{
+		"2c", "2d", "2h", "2s",
+		"3c", "3d", "3h", "3s",
+		"4c", "4d", "4h", "4s",
+		"5c", "5d", "5h", "5s",
+		"6c", "6d", "6h", "6s",
+		"7c", "7d", "7h", "7s",
+		"8c", "8d", "8h", "8s",
+		"9c", "9d", "9h", "9s",
+		"Tc", "Td", "Th", "Ts",
+		"Jc", "Jd", "Jh", "Js",
+		"Qc", "Qd", "Qh", "Qs",
+		"Kc", "Kd", "Kh", "Ks",
+		"Ac", "Ad", "Ah", "As",
+	}
 
-	// // Generate a deck of 52 cards
-	// fullDeck := []string{
-	// 	"2c", "2d", "2h", "2s",
-	// 	"3c", "3d", "3h", "3s",
-	// 	"4c", "4d", "4h", "4s",
-	// 	"5c", "5d", "5h", "5s",
-	// 	"6c", "6d", "6h", "6s",
-	// 	"7c", "7d", "7h", "7s",
-	// 	"8c", "8d", "8h", "8s",
-	// 	"9c", "9d", "9h", "9s",
-	// 	"Tc", "Td", "Th", "Ts",
-	// 	"Jc", "Jd", "Jh", "Js",
-	// 	"Qc", "Qd", "Qh", "Qs",
-	// 	"Kc", "Kd", "Kh", "Ks",
-	// 	"Ac", "Ad", "Ah", "As",
-	// }
+	usedCards := []string{}
+	combined := yourHand + opponentsHand + board
+	for i := 0; i < len(combined); i += 2 {
+		usedCards = append(usedCards, combined[i:i+2])
+	}
 
-	// // Remove cards that are in yourHand, opponentsHand, and board
-	// usedCards := strings.Split(yourHand+opponentsHand+board, "")
-	// remainingDeck := []string{}
-	// for _, card := range fullDeck {
-	// 	if !strings.Contains(yourHand+opponentsHand+board, card) {
-	// 		remainingDeck = append(remainingDeck, card)
-	// 	}
-	// }
+	remainingDeck := []string{}
+	for _, card := range fullDeck {
+		if !contains(usedCards, card) {
+			remainingDeck = append(remainingDeck, card)
+		}
+	}
+
+	// print the length of remainingDeck
+	log.Printf("Length of remainingDeck: %d", len(remainingDeck))
 
 	// // Calculate win probability
 	// winCount := 0
@@ -62,6 +66,18 @@ func calculateHandEquity(yourHand string, opponentsHand string, board string) fl
 
 	// // Calculate probability
 	// return float64(winCount) / float64(totalCount)
+
+	return 0.0
+}
+
+// Helper function to check if a slice contains a specific element
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
 
 func calculateEquity(yourHands []string, OpponentsHands []string) [][]interface{} {
@@ -76,7 +92,7 @@ func calculateEquity(yourHands []string, OpponentsHands []string) [][]interface{
 			log.Printf("Opponents Hand: %s", opponentsHand)
 
 			// define the board
-			board := "2c3d4h"
+			board := "9c8d7h"
 
 			equity := calculateHandEquity(yourHand, opponentsHand, board)
 			totalEquity += equity
