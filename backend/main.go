@@ -47,27 +47,41 @@ func calculateHandEquity(yourHand string, opponentsHand string, board string) fl
 	// print the length of remainingDeck
 	log.Printf("Length of remainingDeck: %d", len(remainingDeck))
 
-	// // Calculate win probability
-	// winCount := 0
-	// totalCount := 0
+	// Calculate win probability
+	winCount := 0.0
+	totalCount := 0
 
-	// for _, turn := range turnAndRiverCards {
-	// 	for _, river := range turnAndRiverCards {
-	// 		if turn != river && !strings.Contains(yourHand+opponentsHand+board, turn) && !strings.Contains(yourHand+opponentsHand+board, river) {
-	// 			// Simulate the outcome with the current turn and river
-	// 			// This is a placeholder for actual hand evaluation logic
-	// 			if yourHand > opponentsHand { // Simplified comparison
-	// 				winCount++
-	// 			}
-	// 			totalCount++
-	// 		}
-	// 	}
-	// }
+	// Generate all combinations of two cards from the remainingDeck
+	for i := 0; i < len(remainingDeck); i++ {
+		for j := i + 1; j < len(remainingDeck); j++ {
+			turn := remainingDeck[i]
+			river := remainingDeck[j]
 
-	// // Calculate probability
-	// return float64(winCount) / float64(totalCount)
+			// Simulate the outcome with the current turn and river
+			yourFinalHand := yourHand + board + turn + river
+			opponentsFinalHand := opponentsHand + board + turn + river
 
-	return 0.0
+			// Evaluate hands according to PLO rules
+			yourHandValue := evaluateHand(yourFinalHand)
+			opponentsHandValue := evaluateHand(opponentsFinalHand)
+
+			if yourHandValue > opponentsHandValue {
+				winCount++
+			} else if yourHandValue == opponentsHandValue {
+				winCount += 0.5
+			}
+			totalCount++
+		}
+	}
+
+	// Calculate probability
+	return winCount / float64(totalCount)
+}
+
+func evaluateHand(hand string) int {
+	// Placeholder for hand evaluation logic according to PLO rules
+	// This function should return an integer representing the hand's strength
+	return 0
 }
 
 // Helper function to check if a slice contains a specific element
