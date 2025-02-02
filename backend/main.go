@@ -14,7 +14,7 @@ type HandRange struct {
 	Hand string `json:"hand"`
 }
 
-func calculateHandEquity(yourHand poker.Card, opponentsHand poker.Card, board []poker.Card) float64 {
+func calculateHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card) float64 {
 	// fullDeck := []string{
 	// 	"2c", "2d", "2h", "2s",
 	// 	"3c", "3d", "3h", "3s",
@@ -99,25 +99,25 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func calculateEquity(yourHands []poker.Card, OpponentsHands []poker.Card) [][]interface{} {
+func calculateEquity(yourHands [][]poker.Card, OpponentHands [][]poker.Card) [][]interface{} {
 	var results [][]interface{}
 	for _, yourHand := range yourHands {
 		totalEquity := 0.0
 
-		for _, opponentsHand := range OpponentsHands {
+		for _, opponentHand := range OpponentHands {
 
 			// print yourHand and opponentsHand
-			log.Printf("Your Hand: %s", yourHand)
-			log.Printf("Opponents Hand: %s", opponentsHand)
+			// log.Printf("Your Hand: %s", yourHand)
+			// log.Printf("Opponents Hand: %s", opponentHand)
 
 			// define the board
 			board := []poker.Card{}
 
-			equity := calculateHandEquity(yourHand, opponentsHand, board)
+			equity := calculateHandEquity(yourHand, opponentHand, board)
 			totalEquity += equity
 		}
 
-		averageEquity := totalEquity / float64(len(OpponentsHands))
+		averageEquity := totalEquity / float64(len(OpponentHands))
 		results = append(results, []interface{}{yourHand, averageEquity})
 	}
 
@@ -152,25 +152,43 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 
 	yourHands := strings.Split(requestData.YourHands, ",")
 
-	var formatedYourHands []poker.Card
+	var formatedYourHands [][]poker.Card
 
 	for i := 0; i < len(yourHands); i += 1 {
 		var tmpHand string = strings.Split(yourHands[i], "@")[0]
+		var tempArray []poker.Card
 		if len(tmpHand) == 8 {
 			for j := 0; j < 8; j += 2 {
-				formatedYourHands = append(formatedYourHands, poker.NewCard(strings.ToUpper(tmpHand[j:j+1])+strings.ToLower(tmpHand[j+1:j+2])))
+				tempArray = append(tempArray, poker.NewCard(strings.ToUpper(tmpHand[j:j+1])+strings.ToLower(tmpHand[j+1:j+2])))
 			}
 		} else {
 			http.Error(w, "Bad request", http.StatusBadRequest)
 		}
+		formatedYourHands = append(formatedYourHands, tempArray)
 	}
 
 	// print the formatedYourHands
 	log.Printf("Formated Your Hands: %s", formatedYourHands)
 
-	// opponentHands := strings.Split(requestData.OpponentsHands, ",")
+	opponentHands := strings.Split(requestData.OpponentsHands, ",")
 
-	var formatedOpponentHands []poker.Card
+	var formatedOpponentHands [][]poker.Card
+
+	for i := 0; i < len(opponentHands); i += 1 {
+		var tmpHand string = strings.Split(opponentHands[i], "@")[0]
+		var tempArray []poker.Card
+		if len(tmpHand) == 8 {
+			for j := 0; j < 8; j += 2 {
+				tempArray = append(tempArray, poker.NewCard(strings.ToUpper(tmpHand[j:j+1])+strings.ToLower(tmpHand[j+1:j+2])))
+			}
+		} else {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+		}
+		formatedOpponentHands = append(formatedOpponentHands, tempArray)
+	}
+
+	// print the formatedOpponentHands
+	log.Printf("Formated Opponent Hands: %s", formatedOpponentHands)
 
 	equity := calculateEquity(formatedYourHands, formatedOpponentHands)
 
