@@ -15,109 +15,122 @@ type HandRange struct {
 }
 
 func calculateHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card) float64 {
-	// fullDeck := []string{
-	// 	"2c", "2d", "2h", "2s",
-	// 	"3c", "3d", "3h", "3s",
-	// 	"4c", "4d", "4h", "4s",
-	// 	"5c", "5d", "5h", "5s",
-	// 	"6c", "6d", "6h", "6s",
-	// 	"7c", "7d", "7h", "7s",
-	// 	"8c", "8d", "8h", "8s",
-	// 	"9c", "9d", "9h", "9s",
-	// 	"Tc", "Td", "Th", "Ts",
-	// 	"Jc", "Jd", "Jh", "Js",
-	// 	"Qc", "Qd", "Qh", "Qs",
-	// 	"Kc", "Kd", "Kh", "Ks",
-	// 	"Ac", "Ad", "Ah", "As",
-	// }
+	// Generate the full deck
+	deck := poker.NewDeck()
+	fullDeck := deck.Draw(52) // Draw all 52 cards from the deck
 
-	// usedCards := []string{}
-	// combined := yourHand + opponentsHand + board
-	// for i := 0; i < len(combined); i += 2 {
-	// 	usedCards = append(usedCards, combined[i:i+2])
-	// }
+	// Remove used cards from the deck
+	usedCards := append(yourHand, opponentHand...)
+	usedCards = append(usedCards, board...)
 
-	// remainingDeck := []string{}
-	// for _, card := range fullDeck {
-	// 	if !contains(usedCards, card) {
-	// 		remainingDeck = append(remainingDeck, card)
-	// 	}
-	// }
-
-	// // print the length of remainingDeck
-	// log.Printf("Length of remainingDeck: %d", len(remainingDeck))
-
-	// // Calculate win probability
-	// winCount := 0.0
-	// totalCount := 0
-
-	// // Generate all combinations of two cards from the remainingDeck
-	// for i := 0; i < len(remainingDeck); i++ {
-	// 	for j := i + 1; j < len(remainingDeck); j++ {
-	// 		turn := remainingDeck[i]
-	// 		river := remainingDeck[j]
-
-	// 		finalBoard := board + turn + river
-
-	// 		// Evaluate hands according to PLO rules
-	// 		yourHandValue := evaluateHand(yourHand, finalBoard)
-	// 		opponentsHandValue := evaluateHand(opponentsHand, finalBoard)
-
-	// 		if yourHandValue > opponentsHandValue {
-	// 			winCount++
-	// 		} else if yourHandValue == opponentsHandValue {
-	// 			winCount += 0.5
-	// 		}
-	// 		totalCount++
-	// 	}
-	// }
-
-	// Calculate probability
-	// return winCount / float64(totalCount)
-
-	return 0.0
-}
-
-func evaluateHand(hand string, board string) int {
-	// print the hand
-	log.Printf("Hand: %s", hand)
-
-	// handCards := strings.Split(hand, "")
-	// cards := make([]poker.Card, len(handCards)/2)
-	// handRank := poker.Evaluate(cards)
-	// return int(handRank)
-	return int(1)
-}
-
-// Helper function to check if a slice contains a specific element
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
+	// remove used cards from the deck
+	remainingDeck := []poker.Card{}
+	for _, card := range fullDeck {
+		used := false
+		for _, usedCard := range usedCards {
+			if card == usedCard {
+				used = true
+				break
+			}
+		}
+		if !used {
+			remainingDeck = append(remainingDeck, card)
 		}
 	}
-	return false
+
+	// Calculate total number of possible outcomes
+	totalOutcomes := 0.0
+	winCount := 0.0
+
+	// get any 2 cards from the remaining deck
+	for i := 0; i < len(remainingDeck); i++ {
+		for j := i + 1; j < len(remainingDeck); j++ {
+			finalBoard := append(board, remainingDeck[i], remainingDeck[j])
+
+			winner := judgeWinner(yourHand, opponentHand, finalBoard)
+
+			// print which hand wins
+			if winner == "yourHand" {
+				winCount++
+			} else if winner == "tie" {
+				winCount += 0.5
+			}
+
+			totalOutcomes++
+		}
+	}
+
+	log.Printf("Win Count: %f", winCount)
+	log.Printf("Total Outcomes: %f", totalOutcomes)
+
+	// Calculate equity
+	equity := winCount / totalOutcomes * 100
+	return equity
 }
 
-func calculateEquity(yourHands [][]poker.Card, OpponentHands [][]poker.Card) [][]interface{} {
+func judgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card) string {
+	// @doc: https://github.com/chehsunliu/poker/blob/72fcd0dd66288388735cc494db3f2bd11b28bfed/lookup.go#L12
+	var maxYourHandRank int32 = 7462
+	var maxOpponentHandRank int32 = 7462
+
+	// 手元の4枚から2枚を選ぶ組み合わせを生成
+	for i := 0; i < 4; i++ {
+		for j := i + 1; j < 4; j++ {
+			// ボードの5枚から3枚を選ぶ組み合わせを生成
+			for k := 0; k < 5; k++ {
+				for l := k + 1; l < 5; l++ {
+					for m := l + 1; m < 5; m++ {
+						// Create a new board
+						newBoard := []poker.Card{board[k], board[l], board[m]}
+
+						yourHandRank := poker.Evaluate(append(newBoard, yourHand[i], yourHand[j]))
+
+						opponentHandRank := poker.Evaluate(append(newBoard, opponentHand[i], opponentHand[j]))
+
+						if yourHandRank < maxYourHandRank {
+							maxYourHandRank = yourHandRank
+						}
+
+						if opponentHandRank < maxOpponentHandRank {
+							maxOpponentHandRank = opponentHandRank
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if maxYourHandRank < maxOpponentHandRank {
+		return "yourHand"
+	} else if maxYourHandRank > maxOpponentHandRank {
+		return "opponentHand"
+	} else {
+		return "tie"
+	}
+}
+
+func calculateEquity(yourHands [][]poker.Card, opponentHands [][]poker.Card) [][]interface{} {
 	var results [][]interface{}
 	for _, yourHand := range yourHands {
 		totalEquity := 0.0
 
-		for _, opponentHand := range OpponentHands {
-
-			// print yourHand and opponentsHand
-			// log.Printf("Your Hand: %s", yourHand)
-			// log.Printf("Opponents Hand: %s", opponentHand)
-
-			// define the board
-			board := []poker.Card{}
+		for _, opponentHand := range opponentHands {
+			// Define the board
+			board := []poker.Card{
+				poker.NewCard("2h"),
+				poker.NewCard("3d"),
+				poker.NewCard("4h"),
+			}
 
 			equity := calculateHandEquity(yourHand, opponentHand, board)
+
+			// print equity
+			log.Printf("Equity: %f", equity)
+
 			totalEquity += equity
 		}
 
-		averageEquity := totalEquity / float64(len(OpponentHands))
+		averageEquity := totalEquity / float64(len(opponentHands))
 		results = append(results, []interface{}{yourHand, averageEquity})
 	}
 
@@ -152,45 +165,45 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 
 	yourHands := strings.Split(requestData.YourHands, ",")
 
-	var formatedYourHands [][]poker.Card
+	var formattedYourHands [][]poker.Card
 
-	for i := 0; i < len(yourHands); i += 1 {
+	for i := 0; i < len(yourHands); i++ {
 		var tmpHand string = strings.Split(yourHands[i], "@")[0]
 		var tempArray []poker.Card
 		if len(tmpHand) == 8 {
 			for j := 0; j < 8; j += 2 {
-				tempArray = append(tempArray, poker.NewCard(strings.ToUpper(tmpHand[j:j+1])+strings.ToLower(tmpHand[j+1:j+2])))
+				cardStr := strings.ToUpper(tmpHand[j:j+1]) + strings.ToLower(tmpHand[j+1:j+2])
+				tempCard := poker.NewCard(cardStr)
+				tempArray = append(tempArray, tempCard)
 			}
 		} else {
 			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
 		}
-		formatedYourHands = append(formatedYourHands, tempArray)
+		formattedYourHands = append(formattedYourHands, tempArray)
 	}
-
-	// print the formatedYourHands
-	log.Printf("Formated Your Hands: %s", formatedYourHands)
 
 	opponentHands := strings.Split(requestData.OpponentsHands, ",")
 
-	var formatedOpponentHands [][]poker.Card
+	var formattedOpponentHands [][]poker.Card
 
-	for i := 0; i < len(opponentHands); i += 1 {
+	for i := 0; i < len(opponentHands); i++ {
 		var tmpHand string = strings.Split(opponentHands[i], "@")[0]
 		var tempArray []poker.Card
 		if len(tmpHand) == 8 {
 			for j := 0; j < 8; j += 2 {
-				tempArray = append(tempArray, poker.NewCard(strings.ToUpper(tmpHand[j:j+1])+strings.ToLower(tmpHand[j+1:j+2])))
+				cardStr := strings.ToUpper(tmpHand[j:j+1]) + strings.ToLower(tmpHand[j+1:j+2])
+				tempCard := poker.NewCard(cardStr)
+				tempArray = append(tempArray, tempCard)
 			}
 		} else {
 			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
 		}
-		formatedOpponentHands = append(formatedOpponentHands, tempArray)
+		formattedOpponentHands = append(formattedOpponentHands, tempArray)
 	}
 
-	// print the formatedOpponentHands
-	log.Printf("Formated Opponent Hands: %s", formatedOpponentHands)
-
-	equity := calculateEquity(formatedYourHands, formatedOpponentHands)
+	equity := calculateEquity(formattedYourHands, formattedOpponentHands)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(equity)
