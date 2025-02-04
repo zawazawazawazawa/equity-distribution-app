@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/chehsunliu/poker"
 )
@@ -14,16 +15,14 @@ type HandRange struct {
 	Hand string `json:"hand"`
 }
 
-func calculateHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card) float64 {
+func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card) float64 {
 	// Generate the full deck
 	deck := poker.NewDeck()
 	fullDeck := deck.Draw(52) // Draw all 52 cards from the deck
 
-	// Remove used cards from the deck
 	usedCards := append(yourHand, opponentHand...)
 	usedCards = append(usedCards, board...)
 
-	// remove used cards from the deck
 	remainingDeck := []poker.Card{}
 	for _, card := range fullDeck {
 		used := false
@@ -42,26 +41,20 @@ func calculateHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board
 	totalOutcomes := 0.0
 	winCount := 0.0
 
-	// get any 2 cards from the remaining deck
 	for i := 0; i < len(remainingDeck); i++ {
 		for j := i + 1; j < len(remainingDeck); j++ {
 			finalBoard := append(board, remainingDeck[i], remainingDeck[j])
-
 			winner := judgeWinner(yourHand, opponentHand, finalBoard)
-
-			// print which hand wins
 			if winner == "yourHand" {
-				winCount++
+				winCount += 1
 			} else if winner == "tie" {
 				winCount += 0.5
+			} else {
+				// Do nothing
 			}
-
-			totalOutcomes++
+			totalOutcomes += 1
 		}
 	}
-
-	log.Printf("Win Count: %f", winCount)
-	log.Printf("Total Outcomes: %f", totalOutcomes)
 
 	// Calculate equity
 	equity := winCount / totalOutcomes * 100
@@ -72,6 +65,18 @@ func judgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker
 	// @doc: https://github.com/chehsunliu/poker/blob/72fcd0dd66288388735cc494db3f2bd11b28bfed/lookup.go#L12
 	var maxYourHandRank int32 = 7462
 	var maxOpponentHandRank int32 = 7462
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	type result struct {
+		yourRank     int32
+		opponentRank int32
+	}
+
+	results := make(chan result, 60)
+
+	// セマフォを使用して同時に実行されるゴルーチンの数を制限
+	semaphore := make(chan struct{}, 8)
 
 	// 手元の4枚から2枚を選ぶ組み合わせを生成
 	for i := 0; i < 4; i++ {
@@ -80,23 +85,53 @@ func judgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker
 			for k := 0; k < 5; k++ {
 				for l := k + 1; l < 5; l++ {
 					for m := l + 1; m < 5; m++ {
-						// Create a new board
-						newBoard := []poker.Card{board[k], board[l], board[m]}
+						wg.Add(1)
+						go func(i, j, k, l, m int) {
+							defer wg.Done()
+							// セマフォを取得
+							semaphore <- struct{}{}
 
-						yourHandRank := poker.Evaluate(append(newBoard, yourHand[i], yourHand[j]))
+							// Create a new board
+							newBoard := []poker.Card{board[k], board[l], board[m]}
 
-						opponentHandRank := poker.Evaluate(append(newBoard, opponentHand[i], opponentHand[j]))
+							yourHandRank := poker.Evaluate(append(newBoard, yourHand[i], yourHand[j]))
 
-						if yourHandRank < maxYourHandRank {
-							maxYourHandRank = yourHandRank
-						}
+							opponentHandRank := poker.Evaluate(append(newBoard, opponentHand[i], opponentHand[j]))
 
-						if opponentHandRank < maxOpponentHandRank {
-							maxOpponentHandRank = opponentHandRank
-						}
+							results <- result{
+								yourRank:     yourHandRank,
+								opponentRank: opponentHandRank,
+							}
+
+							// セマフォを解放
+							<-semaphore
+						}(i, j, k, l, m)
 					}
 				}
 			}
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for res := range results {
+		if res.yourRank < maxYourHandRank {
+			mu.Lock()
+			if res.yourRank < maxYourHandRank {
+				maxYourHandRank = res.yourRank
+			}
+			mu.Unlock()
+		}
+
+		if res.opponentRank < maxOpponentHandRank {
+			mu.Lock()
+			if res.opponentRank < maxOpponentHandRank {
+				maxOpponentHandRank = res.opponentRank
+			}
+			mu.Unlock()
 		}
 	}
 
@@ -109,23 +144,19 @@ func judgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker
 	}
 }
 
-func calculateEquity(yourHands [][]poker.Card, opponentHands [][]poker.Card) [][]interface{} {
+func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]poker.Card) [][]interface{} {
 	var results [][]interface{}
 	for _, yourHand := range yourHands {
 		totalEquity := 0.0
 
 		for _, opponentHand := range opponentHands {
-			// Define the board
 			board := []poker.Card{
 				poker.NewCard("2h"),
 				poker.NewCard("3d"),
 				poker.NewCard("4h"),
 			}
 
-			equity := calculateHandEquity(yourHand, opponentHand, board)
-
-			// print equity
-			log.Printf("Equity: %f", equity)
+			equity := calculateHandVsHandEquity(yourHand, opponentHand, board)
 
 			totalEquity += equity
 		}
@@ -203,7 +234,7 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 		formattedOpponentHands = append(formattedOpponentHands, tempArray)
 	}
 
-	equity := calculateEquity(formattedYourHands, formattedOpponentHands)
+	equity := calculateRangeVsRangeEquity(formattedYourHands, formattedOpponentHands)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(equity)
