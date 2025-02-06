@@ -1,5 +1,6 @@
 # Golang
 backend/sample_input.csv
+badkend/.env
 
 # MacOS
 .DS_Store
