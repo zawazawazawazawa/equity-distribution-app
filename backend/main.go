@@ -30,6 +30,12 @@ type YourDynamoDBItem struct {
 	// Add more fields as needed
 }
 
+// FlopEquities represents all equity calculations for a specific flop
+type FlopEquities struct {
+	Flop     string
+	Equities map[string]float64 // handCombination -> equity
+}
+
 // getDynamoDBClient initializes and returns a DynamoDB client
 func getDynamoDBClient() *dynamodb.DynamoDB {
 	// AWS設定
@@ -48,37 +54,47 @@ func getDynamoDBClient() *dynamodb.DynamoDB {
 	return dynamodb.New(sess)
 }
 
-// queryDynamoDB retrieves an item from DynamoDB based on the flop and hand combination
-func queryDynamoDB(flop string, handCombination string) (*YourDynamoDBItem, error) {
+// batchQueryDynamoDB retrieves all equity calculations for a specific flop
+func batchQueryDynamoDB(flop string) (*FlopEquities, error) {
 	svc := getDynamoDBClient()
-	input := &dynamodb.GetItemInput{
-		TableName: aws.String("PloEquity"),
-		Key: map[string]*dynamodb.AttributeValue{
-			"Flop": {
+
+	// Query parameters for scanning items with the same flop
+	log.Printf("Querying DynamoDB for flop: %s", flop)
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String("PloEquity"),
+		KeyConditionExpression: aws.String("Flop = :flop"),
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":flop": {
 				S: aws.String(flop),
-			},
-			"HandCombination": {
-				S: aws.String(handCombination),
 			},
 		},
 	}
 
-	result, err := svc.GetItem(input)
+	result, err := svc.Query(input)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query DynamoDB: %v", err)
 	}
 
-	if result.Item == nil {
-		return nil, fmt.Errorf("item not found")
+	// Create FlopEquities instance
+	flopEquities := &FlopEquities{
+		Flop:     flop,
+		Equities: make(map[string]float64),
 	}
 
-	item := YourDynamoDBItem{}
-	err = dynamodbattribute.UnmarshalMap(result.Item, &item)
-	if err != nil {
-		return nil, err
+	// Unmarshal each item
+	for _, item := range result.Items {
+		var dbItem struct {
+			HandCombination string  `json:"HandCombination"`
+			Equity          float64 `json:"Equity"`
+		}
+		err = dynamodbattribute.UnmarshalMap(item, &dbItem)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal DynamoDB item: %v", err)
+		}
+		flopEquities.Equities[dbItem.HandCombination] = dbItem.Equity
 	}
 
-	return &item, nil
+	return flopEquities, nil
 }
 
 // insertDynamoDB inserts or updates an item in DynamoDB
@@ -127,8 +143,28 @@ func generateHandCombination(heroHand string, villainHand string) string {
 	return fmt.Sprintf("%s_%s", hands[0], hands[1])
 }
 
+// hasCardDuplicates checks if there are any duplicate cards across all provided card arrays
+func hasCardDuplicates(cards ...[]poker.Card) bool {
+	seen := make(map[string]bool)
+	for _, hand := range cards {
+		for _, card := range hand {
+			cardStr := card.String()
+			if seen[cardStr] {
+				return true
+			}
+			seen[cardStr] = true
+		}
+	}
+	return false
+}
+
 // calculateHandVsHandEquity calculates the equity between two hands
-func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card) float64 {
+func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card, flopEquities *FlopEquities) float64 {
+	// Check for duplicate cards
+	if hasCardDuplicates(yourHand, opponentHand, board) {
+		return -1 // Return -1 to indicate invalid hand due to duplicate cards
+	}
+
 	// Generate the full deck
 	deck := poker.NewDeck()
 	fullDeck := deck.Draw(52) // Draw all 52 cards from the deck
@@ -159,20 +195,15 @@ func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card,
 	for _, card := range opponentHand {
 		villainHandStr += card.String()
 	}
-	// Generate keys for DynamoDB query
-	boardStr := generateBoardString(board)
+	// Generate key for equity lookup
 	handCombination := generateHandCombination(heroHandStr, villainHandStr)
-	item, err := queryDynamoDB(boardStr, handCombination)
-	if err != nil {
-		log.Printf("Error querying DynamoDB: %v", err)
-		// Proceed to calculate equity if query fails
-	}
 
-	var equity float64
-	if item != nil {
-		// Use the retrieved equity from DynamoDB
-		equity = item.Equity
-		return equity
+	// Check if equity exists in memory
+	if flopEquities != nil {
+		if equity, exists := flopEquities.Equities[handCombination]; exists {
+			log.Printf("Found cached equity for combination %s: %.2f", handCombination, equity)
+			return equity
+		}
 	}
 
 	// Calculate equity since it wasn't found in DynamoDB
@@ -192,20 +223,8 @@ func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card,
 		}
 	}
 
-	equity = (winCount / totalOutcomes) * 100
-
-	// DynamoDBからの取得に失敗した場合のみ、計算結果を保存
-	err = insertDynamoDB(
-		boardStr,
-		handCombination,
-		equity,
-	)
-	if err != nil {
-		log.Printf("Error inserting equity into DynamoDB: %v", err)
-		// Handle error as needed
-	}
-
-	return equity
+	calculatedEquity := (winCount / totalOutcomes) * 100
+	return calculatedEquity
 }
 
 // judgeWinner determines the winner between two hands
@@ -246,47 +265,126 @@ func judgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker
 }
 
 // calculateRangeVsRangeEquity calculates equity for ranges of hands
-func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]poker.Card) [][]interface{} {
+func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]poker.Card, board []poker.Card) [][]interface{} {
 	var results [][]interface{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
 	// Set semaphore size to number of CPU cores
-	semaphore := make(chan struct{}, runtime.NumCPU())
+	numCPU := runtime.NumCPU()
+	semaphore := make(chan struct{}, numCPU)
 
-	// Create board outside goroutines to ensure consistency
-	board := []poker.Card{
-		poker.NewCard("2h"),
-		poker.NewCard("3d"),
-		poker.NewCard("4h"),
+	// Fetch all equities for this flop at once
+	boardStr := generateBoardString(board)
+	flopEquities, err := batchQueryDynamoDB(boardStr)
+	if err != nil {
+		log.Printf("Error fetching flop equities: %v", err)
+		flopEquities = &FlopEquities{
+			Flop:     boardStr,
+			Equities: make(map[string]float64),
+		}
 	}
 
-	// Print the number of cores
-	fmt.Println(runtime.NumCPU())
+	// Create a buffered channel for DynamoDB operations
+	type dbOperation struct {
+		handCombination string
+		equity          float64
+	}
+	const dbBatchSize = 25 // DynamoDB batch size limit
+	dbChan := make(chan dbOperation, dbBatchSize)
 
-	for _, yourHand := range yourHands {
-		wg.Add(1)
-		go func(yourHand []poker.Card) {
-			defer wg.Done()
-			// Acquire semaphore
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			totalEquity := 0.0
-
-			for _, opponentHand := range opponentHands {
-				equity := calculateHandVsHandEquity(yourHand, opponentHand, board)
-				totalEquity += equity
+	// Start a goroutine to handle DynamoDB batch operations
+	var dbWg sync.WaitGroup
+	dbWg.Add(1)
+	go func() {
+		defer dbWg.Done()
+		batch := make([]dbOperation, 0, dbBatchSize)
+		for op := range dbChan {
+			batch = append(batch, op)
+			if len(batch) >= dbBatchSize {
+				// Process batch
+				for _, item := range batch {
+					if err := insertDynamoDB(boardStr, item.handCombination, item.equity); err != nil {
+						log.Printf("Error inserting equity into DynamoDB: %v", err)
+					}
+				}
+				batch = batch[:0] // Clear batch
 			}
+		}
+		// Process remaining items
+		for _, item := range batch {
+			if err := insertDynamoDB(boardStr, item.handCombination, item.equity); err != nil {
+				log.Printf("Error inserting equity into DynamoDB: %v", err)
+			}
+		}
+	}()
 
-			averageEquity := totalEquity / float64(len(opponentHands))
-			mu.Lock()
-			results = append(results, []interface{}{yourHand, averageEquity})
-			mu.Unlock()
-		}(yourHand)
+	// Process hands in batches
+	const batchSize = 1000
+	for i := 0; i < len(yourHands); i += batchSize {
+		end := i + batchSize
+		if end > len(yourHands) {
+			end = len(yourHands)
+		}
+
+		batch := yourHands[i:end]
+		for _, yourHand := range batch {
+			wg.Add(1)
+			go func(yourHand []poker.Card) {
+				defer wg.Done()
+				// Acquire semaphore
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				totalEquity := 0.0
+				validOpponentCount := 0
+
+				for _, opponentHand := range opponentHands {
+					heroHandStr := ""
+					for _, card := range yourHand {
+						heroHandStr += card.String()
+					}
+					villainHandStr := ""
+					for _, card := range opponentHand {
+						villainHandStr += card.String()
+					}
+					handCombination := generateHandCombination(heroHandStr, villainHandStr)
+
+					equity := calculateHandVsHandEquity(yourHand, opponentHand, board, flopEquities)
+					if equity != -1 {
+						totalEquity += equity
+						validOpponentCount++
+						// Send to DynamoDB channel
+						dbChan <- dbOperation{
+							handCombination: handCombination,
+							equity:          equity,
+						}
+					} else {
+						log.Printf("Skipping equity calculation for %s vs %s due to duplicate cards", heroHandStr, villainHandStr)
+					}
+				}
+
+				var averageEquity float64
+				if validOpponentCount > 0 {
+					averageEquity = totalEquity / float64(validOpponentCount)
+				} else {
+					averageEquity = -1.0
+				}
+
+				mu.Lock()
+				results = append(results, []interface{}{yourHand, averageEquity})
+				mu.Unlock()
+			}(yourHand)
+		}
+
+		// Wait for current batch to complete before processing next batch
+		wg.Wait()
 	}
 
-	wg.Wait()
+	// Close DynamoDB channel and wait for remaining operations
+	close(dbChan)
+	dbWg.Wait()
+
 	return results
 }
 
@@ -357,7 +455,14 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 		formattedOpponentHands = append(formattedOpponentHands, tempArray)
 	}
 
-	equity := calculateRangeVsRangeEquity(formattedYourHands, formattedOpponentHands)
+	// Create board
+	board := []poker.Card{
+		poker.NewCard("2h"),
+		poker.NewCard("3d"),
+		poker.NewCard("4h"),
+	}
+
+	equity := calculateRangeVsRangeEquity(formattedYourHands, formattedOpponentHands, board)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(equity)
