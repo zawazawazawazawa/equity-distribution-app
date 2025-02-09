@@ -7,3 +7,13 @@ badkend/.env
 
 # TODO
 TODO.md
+
+# LocalStack volumes
+volume/
+.localstack/
+
+# Environment variables
+.env
+
+# Other common files to ignore
+*.log
