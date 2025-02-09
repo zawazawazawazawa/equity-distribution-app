@@ -159,10 +159,11 @@ func hasCardDuplicates(cards ...[]poker.Card) bool {
 }
 
 // calculateHandVsHandEquity calculates the equity between two hands
-func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card, flopEquities *FlopEquities) float64 {
+// Returns equity value and whether it was a cache hit
+func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card, flopEquities *FlopEquities) (float64, bool) {
 	// Check for duplicate cards
 	if hasCardDuplicates(yourHand, opponentHand, board) {
-		return -1 // Return -1 to indicate invalid hand due to duplicate cards
+		return -1, false // Return -1 to indicate invalid hand due to duplicate cards
 	}
 
 	// Generate the full deck
@@ -202,7 +203,7 @@ func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card,
 	if flopEquities != nil {
 		if equity, exists := flopEquities.Equities[handCombination]; exists {
 			log.Printf("Found cached equity for combination %s: %.2f", handCombination, equity)
-			return equity
+			return equity, true
 		}
 	}
 
@@ -224,7 +225,7 @@ func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card,
 	}
 
 	calculatedEquity := (winCount / totalOutcomes) * 100
-	return calculatedEquity
+	return calculatedEquity, false
 }
 
 // judgeWinner determines the winner between two hands
@@ -350,14 +351,16 @@ func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]pok
 					}
 					handCombination := generateHandCombination(heroHandStr, villainHandStr)
 
-					equity := calculateHandVsHandEquity(yourHand, opponentHand, board, flopEquities)
+					equity, isCacheHit := calculateHandVsHandEquity(yourHand, opponentHand, board, flopEquities)
 					if equity != -1 {
 						totalEquity += equity
 						validOpponentCount++
-						// Send to DynamoDB channel
-						dbChan <- dbOperation{
-							handCombination: handCombination,
-							equity:          equity,
+						// Only send to DynamoDB if it wasn't a cache hit
+						if !isCacheHit {
+							dbChan <- dbOperation{
+								handCombination: handCombination,
+								equity:          equity,
+							}
 						}
 					} else {
 						log.Printf("Skipping equity calculation for %s vs %s due to duplicate cards", heroHandStr, villainHandStr)
