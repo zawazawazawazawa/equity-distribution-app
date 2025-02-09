@@ -371,9 +371,11 @@ func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]pok
 					averageEquity = -1.0
 				}
 
-				mu.Lock()
-				results = append(results, []interface{}{yourHand, averageEquity})
-				mu.Unlock()
+				if averageEquity != -1 {
+					mu.Lock()
+					results = append(results, []interface{}{yourHand, averageEquity})
+					mu.Unlock()
+				}
 			}(yourHand)
 		}
 
