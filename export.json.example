@@ -1,0 +1,13 @@
+
+{
+    "Items": [
+        {
+            "Equity": { "N": "83.23" },
+            "Flop": { "S": "2h3d4h" },
+            "HandCombination": { "S": "AcAdAh2c_KcKsQdQh" }
+        }
+    ],
+    "Count": 1,
+    "ScannedCount": 1,
+    "ConsumedCapacity": null
+}
