@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -267,15 +269,36 @@ func judgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker
 
 // calculateRangeVsRangeEquity calculates equity for ranges of hands
 func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]poker.Card, board []poker.Card) [][]interface{} {
+	// シード値を設定してrand.Shuffleの結果を毎回ランダムにする
+	rand.Seed(time.Now().UnixNano())
+
+	// 全組み合わせ数を計算
+	totalCombinations := len(yourHands) * len(opponentHands)
+	// 計算する組み合わせ数を10000以下に制限
+
+	sampleSize := max(totalCombinations/100, 10)
+
+	// yourHandsをシャッフル
+	shuffledYourHands := make([][]poker.Card, len(yourHands))
+	copy(shuffledYourHands, yourHands)
+	rand.Shuffle(len(shuffledYourHands), func(i, j int) {
+		shuffledYourHands[i], shuffledYourHands[j] = shuffledYourHands[j], shuffledYourHands[i]
+	})
+
+	// opponentHandsをシャッフル
+	shuffledOpponentHands := make([][]poker.Card, len(opponentHands))
+	copy(shuffledOpponentHands, opponentHands)
+	rand.Shuffle(len(shuffledOpponentHands), func(i, j int) {
+		shuffledOpponentHands[i], shuffledOpponentHands[j] = shuffledOpponentHands[j], shuffledOpponentHands[i]
+	})
+
 	var results [][]interface{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	// Set semaphore size to number of CPU cores
 	numCPU := runtime.NumCPU()
 	semaphore := make(chan struct{}, numCPU)
 
-	// Fetch all equities for this flop at once
 	boardStr := generateBoardString(board)
 	flopEquities, err := batchQueryDynamoDB(boardStr)
 	if err != nil {
@@ -286,7 +309,6 @@ func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]pok
 		}
 	}
 
-	// Create a buffered channel for DynamoDB operations
 	type dbOperation struct {
 		handCombination string
 		equity          float64
@@ -294,7 +316,6 @@ func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]pok
 	const dbBatchSize = 25 // DynamoDB batch size limit
 	dbChan := make(chan dbOperation, dbBatchSize)
 
-	// Start a goroutine to handle DynamoDB batch operations
 	var dbWg sync.WaitGroup
 	dbWg.Add(1)
 	go func() {
@@ -320,77 +341,98 @@ func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]pok
 		}
 	}()
 
-	// Process hands in batches
+	// 計算する組み合わせ数を制限して処理
+	processedCombinations := 0
 	const batchSize = 1000
-	for i := 0; i < len(yourHands); i += batchSize {
-		end := i + batchSize
-		if end > len(yourHands) {
-			end = len(yourHands)
-		}
 
-		batch := yourHands[i:end]
-		for _, yourHand := range batch {
-			wg.Add(1)
-			go func(yourHand []poker.Card) {
-				defer wg.Done()
-				// Acquire semaphore
-				semaphore <- struct{}{}
-				defer func() { <-semaphore }()
+	// シャッフルされたyourHandsから必要な数だけ処理
+	for i := 0; processedCombinations < sampleSize && i < len(shuffledYourHands); i++ {
+		// 残り必要な組み合わせ数を計算
+		remainingNeeded := sampleSize - processedCombinations
+		// この手札に対して計算する相手の手札数を決定
+		opponentHandsToProcess := min(len(shuffledOpponentHands), remainingNeeded)
 
-				totalEquity := 0.0
-				validOpponentCount := 0
+		wg.Add(1)
+		go func(yourHand []poker.Card, start int, count int) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
 
-				for _, opponentHand := range opponentHands {
-					heroHandStr := ""
-					for _, card := range yourHand {
-						heroHandStr += card.String()
-					}
-					villainHandStr := ""
-					for _, card := range opponentHand {
-						villainHandStr += card.String()
-					}
-					handCombination := generateHandCombination(heroHandStr, villainHandStr)
+			totalEquity := 0.0
+			validOpponentCount := 0
 
-					equity, isCacheHit := calculateHandVsHandEquity(yourHand, opponentHand, board, flopEquities)
-					if equity != -1 {
-						totalEquity += equity
-						validOpponentCount++
-						// Only send to DynamoDB if it wasn't a cache hit
-						if !isCacheHit {
-							dbChan <- dbOperation{
-								handCombination: handCombination,
-								equity:          equity,
-							}
+			// 制限された数の相手の手札に対して計算
+			for j := 0; j < count; j++ {
+				opponentHand := shuffledOpponentHands[j]
+				heroHandStr := ""
+				for _, card := range yourHand {
+					heroHandStr += card.String()
+				}
+				villainHandStr := ""
+				for _, card := range opponentHand {
+					villainHandStr += card.String()
+				}
+				handCombination := generateHandCombination(heroHandStr, villainHandStr)
+
+				equity, isCacheHit := calculateHandVsHandEquity(yourHand, opponentHand, board, flopEquities)
+				if equity != -1 {
+					totalEquity += equity
+					validOpponentCount++
+					// Only send to DynamoDB if it wasn't a cache hit
+					if !isCacheHit {
+						dbChan <- dbOperation{
+							handCombination: handCombination,
+							equity:          equity,
 						}
-					} else {
-						log.Printf("Skipping equity calculation for %s vs %s due to duplicate cards", heroHandStr, villainHandStr)
 					}
-				}
-
-				var averageEquity float64
-				if validOpponentCount > 0 {
-					averageEquity = totalEquity / float64(validOpponentCount)
 				} else {
-					averageEquity = -1.0
+					log.Printf("Skipping equity calculation for %s vs %s due to duplicate cards", heroHandStr, villainHandStr)
 				}
+			}
 
-				if averageEquity != -1 {
-					mu.Lock()
-					results = append(results, []interface{}{yourHand, averageEquity})
-					mu.Unlock()
-				}
-			}(yourHand)
-		}
+			var averageEquity float64
+			if validOpponentCount > 0 {
+				averageEquity = totalEquity / float64(validOpponentCount)
+			} else {
+				averageEquity = -1.0
+			}
 
-		// Wait for current batch to complete before processing next batch
-		wg.Wait()
+			if averageEquity != -1 {
+				mu.Lock()
+				results = append(results, []interface{}{yourHand, averageEquity})
+				mu.Unlock()
+			}
+		}(shuffledYourHands[i], 0, opponentHandsToProcess)
+
+		processedCombinations += opponentHandsToProcess
 	}
 
-	// Close DynamoDB channel and wait for remaining operations
+	wg.Wait()
 	close(dbChan)
 	dbWg.Wait()
 
+	// 処理した組み合わせ数をログに出力
+	log.Printf("Processed %d out of %d possible combinations (%.1f%%)",
+		processedCombinations, totalCombinations,
+		float64(processedCombinations)/float64(totalCombinations)*100)
+
 	return results
+}
+
+// Helper function for min
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// Helper function for max
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // handleEquityCalculation handles the equity calculation HTTP request
