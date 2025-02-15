@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { Line } from "react-chartjs-2";
 import { Card } from "./components/Card";
+import { GameModeSelector } from "./components/GameModeSelector";
+import { GameMode, GameModeState } from "../types/poker";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -50,11 +52,19 @@ const ranks = [
 const suits = ["h", "d", "c", "s"];
 
 export default function Home() {
+  // 既存のstate
   const [selectedCards, setSelectedCards] = useState<Card[]>([]);
   const [handRange, setHandRange] = useState("");
   const [opponentHandRange, setOpponentHandRange] = useState("");
   const [equityData, setEquityData] = useState<[string, number][]>([]);
   const [validationError, setValidationError] = useState<string>("");
+
+  // 新規追加のstate
+  const [gameState, setGameState] = useState<GameModeState>({
+    mode: "hand-vs-range", // デフォルトをhand-vs-rangeに変更
+    heroHand: "",
+    villainInput: "",
+  });
 
   const getAvailableCards = (excludeCards: Card[]) => {
     const availableCards: Card[] = [];
@@ -125,6 +135,18 @@ export default function Home() {
     }
   };
 
+  const handleModeChange = (newMode: GameMode) => {
+    setGameState((prev) => ({
+      ...prev,
+      mode: newMode,
+      villainInput: newMode === "hand-vs-range" ? "" : [],
+    }));
+    // モード切替時にフォームをリセット
+    setHandRange("");
+    setOpponentHandRange("");
+    setEquityData([]);
+  };
+
   const data = {
     labels: equityData.map((item) => item[0] as string),
     datasets: [
@@ -157,32 +179,46 @@ export default function Home() {
       <main className="flex flex-col items-center gap-8">
         <h1 className="text-2xl font-bold">Poker Equity Calculator</h1>
 
-        {/* Equity Calculation Form */}
+        <GameModeSelector
+          currentMode={gameState.mode}
+          onModeChange={handleModeChange}
+        />
+
         <section className="w-full max-w-2xl">
-          <h2 className="text-xl mb-4">Enter Hand Range</h2>
+          <h2 className="text-xl mb-4">
+            {gameState.mode === "hand-vs-range"
+              ? "Hand vs Range"
+              : "Range vs Range"}
+          </h2>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col">
-              <label htmlFor="opponentHandRange">
-                Opponents Hand Range (e.g., AhKdQsJc,AsKdQhJc):
+              <label htmlFor="handRange">
+                {gameState.mode === "hand-vs-range"
+                  ? "Your Single Hand:"
+                  : "Your Range:"}
               </label>
+              <textarea
+                id="handRange"
+                value={handRange}
+                onChange={(e) => setHandRange(e.target.value)}
+                rows={gameState.mode === "hand-vs-range" ? 1 : 4}
+                className="border p-2 rounded"
+                placeholder={
+                  gameState.mode === "hand-vs-range"
+                    ? "Enter your hand:"
+                    : "Enter your range:"
+                }
+              />
+            </div>
+            <div className="flex flex-col">
+              <label htmlFor="opponentHandRange">Opponents Range:</label>
               <textarea
                 id="opponentHandRange"
                 value={opponentHandRange}
                 onChange={(e) => setOpponentHandRange(e.target.value)}
                 rows={4}
                 className="border p-2 rounded"
-              />
-            </div>
-            <div className="flex flex-col">
-              <label htmlFor="handRange">
-                Your Hand Range (e.g., AhKdQsJc,AsKdQhJc):
-              </label>
-              <textarea
-                id="handRange"
-                value={handRange}
-                onChange={(e) => setHandRange(e.target.value)}
-                rows={4}
-                className="border p-2 rounded"
+                placeholder="Enter opponent's range:"
               />
             </div>
 
