@@ -166,35 +166,46 @@ export default function Home() {
   const options = {
     scales: {
       x: {
-        display: false, // Hide x-axis labels
+        display: false,
       },
       y: {
         beginAtZero: true,
+        grid: {
+          color: "rgba(255, 255, 255, 0.1)",
+        },
+        ticks: {
+          color: "#9CA3AF",
+        },
       },
     },
+    plugins: {
+      legend: {
+        labels: {
+          color: "#9CA3AF",
+        },
+      },
+    },
+    maintainAspectRatio: false,
   };
 
   return (
     <div className="min-h-screen p-8">
-      <main className="flex flex-col items-center gap-8">
-        <h1 className="text-2xl font-bold">Poker Equity Calculator</h1>
+      <main className="flex flex-col items-center gap-8 max-w-7xl mx-auto">
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
+          Poker Equity Calculator
+        </h1>
 
         <GameModeSelector
           currentMode={gameState.mode}
           onModeChange={handleModeChange}
         />
 
-        <section className="w-full max-w-2xl">
-          <h2 className="text-xl mb-4">
-            {gameState.mode === "hand-vs-range"
-              ? "Hand vs Range"
-              : "Range vs Range"}
-          </h2>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="flex flex-col">
-              <label htmlFor="handRange">
+        <section className="card w-full max-w-2xl">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+            <div className="flex flex-col gap-2">
+              <label htmlFor="handRange" className="text-gray-300">
                 {gameState.mode === "hand-vs-range"
-                  ? "Your Single Hand:"
+                  ? "Your Hand:"
                   : "Your Range:"}
               </label>
               <textarea
@@ -202,29 +213,26 @@ export default function Home() {
                 value={handRange}
                 onChange={(e) => setHandRange(e.target.value)}
                 rows={gameState.mode === "hand-vs-range" ? 1 : 4}
-                className="border p-2 rounded"
+                className="input"
                 placeholder={
                   gameState.mode === "hand-vs-range"
-                    ? "Enter your hand:"
-                    : "Enter your range:"
+                    ? "Enter your hand"
+                    : "Enter your range"
                 }
               />
             </div>
-            <div className="flex flex-col">
-              <label htmlFor="opponentHandRange">Opponents Range:</label>
+            <div className="flex flex-col gap-2">
               <textarea
                 id="opponentHandRange"
                 value={opponentHandRange}
                 onChange={(e) => setOpponentHandRange(e.target.value)}
                 rows={4}
-                className="border p-2 rounded"
+                className="input"
                 placeholder="Enter opponent's range:"
               />
             </div>
 
-            {/* Card Selection Section */}
-            <section>
-              <h2 className="text-xl mb-4">Select Flop Cards</h2>
+            <section className="border-t border-gray-800 pt-6">
               <div className="flex gap-4">
                 {[0, 1, 2].map((index) => (
                   <select
@@ -253,10 +261,10 @@ export default function Home() {
                 ))}
               </div>
               {validationError && (
-                <p className="text-red-500 mt-2">{validationError}</p>
+                <p className="text-red-400 mt-2">{validationError}</p>
               )}
               {selectedCards.length > 0 && (
-                <p className="mt-4">
+                <p className="text-gray-400 mt-4">
                   Selected Cards:{" "}
                   {selectedCards
                     .map((card) => `${card.rank}${card.suit}`)
@@ -264,19 +272,18 @@ export default function Home() {
                 </p>
               )}
             </section>
-            <button
-              type="submit"
-              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-            >
-              Draw Graph
+
+            <button type="submit" className="btn-primary">
+              Calculate Equity
             </button>
           </form>
         </section>
 
-        {/* Equity Graph */}
         {equityData.length > 0 && (
-          <section className="w-full max-w-2xl">
-            <h2 className="text-xl mb-4">Equity Distribution</h2>
+          <section className="card w-full max-w-2xl">
+            <h2 className="text-2xl font-semibold mb-6 text-blue-400">
+              Equity Distribution
+            </h2>
             <Line data={data} options={options} />
           </section>
         )}
