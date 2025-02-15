@@ -38,6 +38,12 @@ type FlopEquities struct {
 	Equities map[string]float64 // handCombination -> equity
 }
 
+// 新しい構造体を追加
+type HandVsRangeResult struct {
+	OpponentHand string  `json:"opponentHand"`
+	Equity       float64 `json:"equity"`
+}
+
 // getDynamoDBClient initializes and returns a DynamoDB client
 func getDynamoDBClient() *dynamodb.DynamoDB {
 	// AWS設定
@@ -419,6 +425,50 @@ func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]pok
 	return results
 }
 
+// calculateHandVsRangeEquity は1つのハンドと複数のハンドのレンジに対してエクイティを計算
+func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.Card, board []poker.Card) []HandVsRangeResult {
+	var results []HandVsRangeResult
+	boardStr := generateBoardString(board)
+
+	// DynamoDBからフロップに関連するエクイティを取得
+	flopEquities, err := batchQueryDynamoDB(boardStr)
+	if err != nil {
+		log.Printf("Error fetching flop equities: %v", err)
+		flopEquities = &FlopEquities{
+			Flop:     boardStr,
+			Equities: make(map[string]float64),
+		}
+	}
+
+	// 各オポーネントハンドに対してエクイティを計算
+	for _, opponentHand := range opponentHands {
+		heroHandStr := ""
+		for _, card := range yourHand {
+			heroHandStr += card.String()
+		}
+
+		villainHandStr := ""
+		for _, card := range opponentHand {
+			villainHandStr += card.String()
+		}
+
+		equity, _ := calculateHandVsHandEquity(yourHand, opponentHand, board, flopEquities)
+		if equity != -1 {
+			results = append(results, HandVsRangeResult{
+				OpponentHand: villainHandStr,
+				Equity:       equity,
+			})
+		}
+	}
+
+	// エクイティでソート
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Equity > results[j].Equity
+	})
+
+	return results
+}
+
 // Helper function for min
 func min(a, b int) int {
 	if a < b {
@@ -532,6 +582,84 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(equity)
 }
 
+// handEquityCalculationのハンドラーを修正
+func handleHandVsRangeCalculation(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		return
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		return
+	}
+
+	var requestData struct {
+		YourHand       string   `json:"yourHand"`
+		OpponentsHands string   `json:"opponentsHands"`
+		FlopCards      []string `json:"flopCards"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// フロップカードの検証と変換
+	if len(requestData.FlopCards) != 3 {
+		http.Error(w, "Exactly 3 flop cards are required", http.StatusBadRequest)
+		return
+	}
+
+	// ヒーローハンドの変換
+	var yourHand []poker.Card
+	tmpHand := strings.Split(requestData.YourHand, "@")[0]
+	if len(tmpHand) == 8 {
+		for j := 0; j < 8; j += 2 {
+			cardStr := strings.ToUpper(tmpHand[j:j+1]) + strings.ToLower(tmpHand[j+1:j+2])
+			tempCard := poker.NewCard(cardStr)
+			yourHand = append(yourHand, tempCard)
+		}
+	} else {
+		http.Error(w, "Invalid hero hand format", http.StatusBadRequest)
+		return
+	}
+
+	// オポーネントレンジの変換
+	opponentHands := strings.Split(requestData.OpponentsHands, ",")
+	var formattedOpponentHands [][]poker.Card
+	for _, hand := range opponentHands {
+		tmpHand := strings.Split(hand, "@")[0]
+		var tempArray []poker.Card
+		if len(tmpHand) == 8 {
+			for j := 0; j < 8; j += 2 {
+				cardStr := strings.ToUpper(tmpHand[j:j+1]) + strings.ToLower(tmpHand[j+1:j+2])
+				tempCard := poker.NewCard(cardStr)
+				tempArray = append(tempArray, tempCard)
+			}
+			formattedOpponentHands = append(formattedOpponentHands, tempArray)
+		}
+	}
+
+	// フロップの変換
+	board := make([]poker.Card, 0, 3)
+	for _, cardStr := range requestData.FlopCards {
+		card := poker.NewCard(cardStr)
+		board = append(board, card)
+	}
+
+	// エクイティ計算
+	results := calculateHandVsRangeEquity(yourHand, formattedOpponentHands, board)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
 // main initializes the HTTP server
 func main() {
 	// Load environment variables from .env file
@@ -541,6 +669,7 @@ func main() {
 	}
 
 	http.HandleFunc("/calculate-equity", handleEquityCalculation)
+	http.HandleFunc("/calculate-hand-vs-range", handleHandVsRangeCalculation)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Equity Distribution Backend is running")
 	})

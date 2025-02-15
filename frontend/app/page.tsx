@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Line } from "react-chartjs-2";
+import { Bar } from "react-chartjs-2";
 import { Card } from "./components/Card";
 import { GameModeSelector } from "./components/GameModeSelector";
 import { GameMode, GameModeState } from "../types/poker";
@@ -10,6 +10,7 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -20,6 +21,7 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend
@@ -32,6 +34,11 @@ type ApiResponse =
 type Card = {
   rank: string;
   suit: string;
+};
+
+type HandVsRangeResult = {
+  opponentHand: string;
+  equity: number;
 };
 
 const ranks = [
@@ -66,6 +73,21 @@ export default function Home() {
     villainInput: "",
   });
 
+  const formatHandString = (hand: string): string => {
+    // @記号で分割し、最初の部分だけを取得
+    const cleanHand = hand.split("@")[0];
+
+    // 2文字ごとにカードを分割し、スペースで結合
+    const cards = cleanHand.match(/.{2}/g) || [];
+    return cards
+      .map((card) => {
+        const rank = card[0].toUpperCase();
+        const suit = card[1].toLowerCase();
+        return `${rank}${suit}`;
+      })
+      .join(" ");
+  };
+
   const getAvailableCards = (excludeCards: Card[]) => {
     const availableCards: Card[] = [];
     ranks.forEach((rank) => {
@@ -98,37 +120,45 @@ export default function Home() {
     event.preventDefault();
     setValidationError("");
 
-    // Validate flop cards
     if (selectedCards.filter((card) => card).length !== 3) {
       setValidationError("Please select all three flop cards");
       return;
     }
 
+    const endpoint =
+      gameState.mode === "hand-vs-range"
+        ? "calculate-hand-vs-range"
+        : "calculate-equity";
+
     try {
-      const response = await fetch("http://localhost:8080/calculate-equity", {
+      const response = await fetch(`http://localhost:8080/${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          yourHands: handRange.toUpperCase(),
+          yourHand: handRange.toUpperCase(),
           opponentsHands: opponentHandRange.toUpperCase(),
           flopCards: selectedCards.map((card) => `${card.rank}${card.suit}`),
         }),
       });
-      const data: ApiResponse = await response.json();
-      if (Array.isArray(data)) {
-        const sortedData = data.sort((a, b) => b[1] - a[1]);
-        setEquityData(sortedData);
-      } else if (
-        data &&
-        typeof data === "object" &&
-        Array.isArray(data.equity)
-      ) {
-        const sortedData = data.equity.sort((a, b) => b[1] - a[1]);
-        setEquityData(sortedData);
+
+      if (gameState.mode === "hand-vs-range") {
+        const data: HandVsRangeResult[] = await response.json();
+        setEquityData(
+          data.map((result) => [result.opponentHand, result.equity])
+        );
       } else {
-        console.error("Unexpected data format:", data);
+        const data: ApiResponse = await response.json();
+        if (Array.isArray(data)) {
+          setEquityData(data.sort((a, b) => b[1] - a[1]));
+        } else if (
+          data &&
+          typeof data === "object" &&
+          Array.isArray(data.equity)
+        ) {
+          setEquityData(data.equity.sort((a, b) => b[1] - a[1]));
+        }
       }
     } catch (error) {
       console.error("Error calculating equity:", error);
@@ -151,37 +181,56 @@ export default function Home() {
     labels: equityData.map((item) => item[0] as string),
     datasets: [
       {
-        label: "Equity",
+        label:
+          gameState.mode === "hand-vs-range"
+            ? "Equity vs Opponent Hands"
+            : "Equity Distribution",
         data: equityData.map((item) => Number(item[1])),
-        backgroundColor: "rgba(75, 192, 192, 0.2)",
-        borderColor: "rgba(75, 192, 192, 1)",
+        backgroundColor: "rgba(54, 162, 235, 0.5)",
+        borderColor: "rgba(54, 162, 235, 1)",
         borderWidth: 1,
-        pointStyle: "circle",
-        radius: 1,
-        hoverRadius: 10,
       },
     ],
   };
 
+  // グラフオプションを更新
   const options = {
+    responsive: true,
     scales: {
       x: {
-        display: false,
+        display: false, // 横軸を非表示に
+        grid: {
+          display: false, // グリッドも非表示に
+        },
       },
       y: {
         beginAtZero: true,
+        max: 100,
         grid: {
           color: "rgba(255, 255, 255, 0.1)",
         },
         ticks: {
           color: "#9CA3AF",
         },
+        title: {
+          display: true,
+          text: "Equity %",
+          color: "#9CA3AF",
+        },
       },
     },
     plugins: {
       legend: {
-        labels: {
-          color: "#9CA3AF",
+        display: false, // レジェンドも非表示に
+      },
+      tooltip: {
+        callbacks: {
+          title: (tooltipItems: any) => {
+            // ツールチップにハンド情報を表示
+            const index = tooltipItems[0].dataIndex;
+            return `Hand: ${data.labels[index]}`;
+          },
+          label: (context: any) => `Equity: ${context.parsed.y.toFixed(2)}%`,
         },
       },
     },
@@ -192,7 +241,7 @@ export default function Home() {
     <div className="min-h-screen p-8">
       <main className="flex flex-col items-center gap-8 max-w-7xl mx-auto">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
-          Poker Equity Calculator
+          PLO Equity Graph Drawer
         </h1>
 
         <GameModeSelector
@@ -237,7 +286,7 @@ export default function Home() {
                 {[0, 1, 2].map((index) => (
                   <select
                     key={index}
-                    className="p-2 border rounded"
+                    className="p-2 border rounded bg-gray-800 text-gray-200 border-gray-700"
                     value={
                       selectedCards[index]
                         ? `${selectedCards[index].rank}${selectedCards[index].suit}`
@@ -281,10 +330,43 @@ export default function Home() {
 
         {equityData.length > 0 && (
           <section className="card w-full max-w-2xl">
-            <h2 className="text-2xl font-semibold mb-6 text-blue-400">
-              Equity Distribution
-            </h2>
-            <Line data={data} options={options} />
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-semibold text-blue-400">
+                Hand vs Range Equity
+              </h2>
+              <div className="text-sm text-gray-400">
+                {equityData.length} combinations
+              </div>
+            </div>
+            <div style={{ height: "400px" }}>
+              <Bar data={data} options={options} />
+            </div>
+            <div className="mt-6 grid grid-cols-3 gap-4 text-gray-300">
+              <div>
+                <p className="font-semibold">Your Hand</p>
+                <p className="text-xl">{formatHandString(handRange)}</p>
+              </div>
+              <div>
+                <p className="font-semibold">Flop</p>
+                <p className="text-xl">
+                  {selectedCards
+                    .map((card) => `${card.rank}${card.suit}`)
+                    .join(" ")}
+                </p>
+              </div>
+              <div>
+                <p className="font-semibold">Average Equity</p>
+                <p className="text-xl">
+                  {(
+                    equityData.reduce(
+                      (sum, [_, equity]) => sum + Number(equity),
+                      0
+                    ) / equityData.length
+                  ).toFixed(2)}
+                  %
+                </p>
+              </div>
+            </div>
           </section>
         )}
       </main>
