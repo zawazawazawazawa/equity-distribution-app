@@ -27,15 +27,73 @@ type ApiResponse =
   | Array<[string, number]>
   | { equity: Array<[string, number]> };
 
+type Card = {
+  rank: string;
+  suit: string;
+};
+
+const ranks = [
+  "A",
+  "K",
+  "Q",
+  "J",
+  "10",
+  "9",
+  "8",
+  "7",
+  "6",
+  "5",
+  "4",
+  "3",
+  "2",
+];
+const suits = ["h", "d", "c", "s"];
+
 export default function Home() {
-  const [selectedCard, setSelectedCard] = useState<string | null>(null);
-  const cards = ["A", "K", "Q"];
+  const [selectedCards, setSelectedCards] = useState<Card[]>([]);
   const [handRange, setHandRange] = useState("");
   const [opponentHandRange, setOpponentHandRange] = useState("");
   const [equityData, setEquityData] = useState<[string, number][]>([]);
+  const [validationError, setValidationError] = useState<string>("");
+
+  const getAvailableCards = (excludeCards: Card[]) => {
+    const availableCards: Card[] = [];
+    ranks.forEach((rank) => {
+      suits.forEach((suit) => {
+        if (
+          !excludeCards.some((card) => card.rank === rank && card.suit === suit)
+        ) {
+          availableCards.push({ rank, suit });
+        }
+      });
+    });
+    return availableCards;
+  };
+
+  const handleCardSelect = (
+    event: React.ChangeEvent<HTMLSelectElement>,
+    index: number
+  ) => {
+    const [rank, suit] = event.target.value.split("");
+    const newCard = { rank, suit };
+
+    setSelectedCards((prev) => {
+      const newCards = [...prev];
+      newCards[index] = newCard;
+      return newCards.slice(0, 3); // 最大3枚まで
+    });
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setValidationError("");
+
+    // Validate flop cards
+    if (selectedCards.filter((card) => card).length !== 3) {
+      setValidationError("Please select all three flop cards");
+      return;
+    }
+
     try {
       const response = await fetch("http://localhost:8080/calculate-equity", {
         method: "POST",
@@ -45,6 +103,7 @@ export default function Home() {
         body: JSON.stringify({
           yourHands: handRange.toUpperCase(),
           opponentsHands: opponentHandRange.toUpperCase(),
+          flopCards: selectedCards.map((card) => `${card.rank}${card.suit}`),
         }),
       });
       const data: ApiResponse = await response.json();
@@ -96,33 +155,15 @@ export default function Home() {
   return (
     <div className="min-h-screen p-8">
       <main className="flex flex-col items-center gap-8">
-        <h1 className="text-2xl font-bold">ポーカーエクイティ計算</h1>
+        <h1 className="text-2xl font-bold">Poker Equity Calculator</h1>
 
-        {/* カード選択セクション */}
-        <section>
-          <h2 className="text-xl mb-4">フロップカード選択</h2>
-          <div className="flex gap-4">
-            {cards.map((card) => (
-              <Card
-                key={card}
-                value={card}
-                isSelected={selectedCard === card}
-                onClick={() => setSelectedCard(card)}
-              />
-            ))}
-          </div>
-          {selectedCard && (
-            <p className="mt-4">選択されたカード: {selectedCard}</p>
-          )}
-        </section>
-
-        {/* エクイティ計算フォーム */}
+        {/* Equity Calculation Form */}
         <section className="w-full max-w-2xl">
-          <h2 className="text-xl mb-4">ハンドレンジ入力</h2>
+          <h2 className="text-xl mb-4">Enter Hand Range</h2>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col">
               <label htmlFor="opponentHandRange">
-                相手のハンドレンジ (例: AhKdQsJc,AsKdQhJc):
+                Opponents Hand Range (e.g., AhKdQsJc,AsKdQhJc):
               </label>
               <textarea
                 id="opponentHandRange"
@@ -134,7 +175,7 @@ export default function Home() {
             </div>
             <div className="flex flex-col">
               <label htmlFor="handRange">
-                自分のハンドレンジ (例: AhKdQsJc,AsKdQhJc):
+                Your Hand Range (e.g., AhKdQsJc,AsKdQhJc):
               </label>
               <textarea
                 id="handRange"
@@ -144,19 +185,62 @@ export default function Home() {
                 className="border p-2 rounded"
               />
             </div>
+
+            {/* Card Selection Section */}
+            <section>
+              <h2 className="text-xl mb-4">Select Flop Cards</h2>
+              <div className="flex gap-4">
+                {[0, 1, 2].map((index) => (
+                  <select
+                    key={index}
+                    className="p-2 border rounded"
+                    value={
+                      selectedCards[index]
+                        ? `${selectedCards[index].rank}${selectedCards[index].suit}`
+                        : ""
+                    }
+                    onChange={(e) => handleCardSelect(e, index)}
+                  >
+                    <option value="">Select Card</option>
+                    {getAvailableCards(
+                      selectedCards.filter((_, i) => i !== index)
+                    ).map((card) => (
+                      <option
+                        key={`${card.rank}${card.suit}`}
+                        value={`${card.rank}${card.suit}`}
+                      >
+                        {card.rank}
+                        {card.suit}
+                      </option>
+                    ))}
+                  </select>
+                ))}
+              </div>
+              {validationError && (
+                <p className="text-red-500 mt-2">{validationError}</p>
+              )}
+              {selectedCards.length > 0 && (
+                <p className="mt-4">
+                  Selected Cards:{" "}
+                  {selectedCards
+                    .map((card) => `${card.rank}${card.suit}`)
+                    .join(", ")}
+                </p>
+              )}
+            </section>
             <button
               type="submit"
               className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
             >
-              グラフを描画
+              Draw Graph
             </button>
           </form>
         </section>
 
-        {/* エクイティグラフ */}
+        {/* Equity Graph */}
         {equityData.length > 0 && (
           <section className="w-full max-w-2xl">
-            <h2 className="text-xl mb-4">エクイティ分布</h2>
+            <h2 className="text-xl mb-4">Equity Distribution</h2>
             <Line data={data} options={options} />
           </section>
         )}
