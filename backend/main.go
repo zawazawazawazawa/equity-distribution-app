@@ -435,6 +435,14 @@ func max(a, b int) int {
 	return b
 }
 
+// カードをソートするためのヘルパー関数
+func sortCards(cards []string) []string {
+	sorted := make([]string, len(cards))
+	copy(sorted, cards)
+	sort.Strings(sorted)
+	return sorted
+}
+
 // handleEquityCalculation handles the equity calculation HTTP request
 func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
@@ -453,14 +461,24 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var requestData struct {
-		YourHands      string `json:"yourHands"`
-		OpponentsHands string `json:"opponentsHands"`
+		YourHands      string   `json:"yourHands"`
+		OpponentsHands string   `json:"opponentsHands"`
+		FlopCards      []string `json:"flopCards"`
 	}
-	err := json.NewDecoder(r.Body).Decode(&requestData)
-	if err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
+
+	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	// フロップカードの検証
+	if len(requestData.FlopCards) != 3 {
+		http.Error(w, "Exactly 3 flop cards are required", http.StatusBadRequest)
+		return
+	}
+
+	// フロップカードをソート
+	sortedFlopCards := sortCards(requestData.FlopCards)
 
 	yourHands := strings.Split(requestData.YourHands, ",")
 
@@ -502,11 +520,10 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 		formattedOpponentHands = append(formattedOpponentHands, tempArray)
 	}
 
-	// Create board
-	board := []poker.Card{
-		poker.NewCard("2h"),
-		poker.NewCard("3d"),
-		poker.NewCard("4h"),
+	board := make([]poker.Card, 0, 3)
+	for _, cardStr := range sortedFlopCards {
+		card := poker.NewCard(cardStr)
+		board = append(board, card)
 	}
 
 	equity := calculateRangeVsRangeEquity(formattedYourHands, formattedOpponentHands, board)
