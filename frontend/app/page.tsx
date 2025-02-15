@@ -13,6 +13,7 @@ import {
   BarElement,
   Title,
   Tooltip,
+  TooltipItem,
   Legend,
 } from "chart.js";
 
@@ -225,12 +226,15 @@ export default function Home() {
       },
       tooltip: {
         callbacks: {
-          title: (tooltipItems: any) => {
-            // ツールチップにハンド情報を表示
-            const index = tooltipItems[0].dataIndex;
+          title: (tooltipItems: TooltipItem<"bar">[]) => {
+            const index = tooltipItems[0]?.dataIndex ?? 0;
             return `Hand: ${data.labels[index]}`;
           },
-          label: (context: any) => `Equity: ${context.parsed.y.toFixed(2)}%`,
+          label: (context: TooltipItem<"bar">) => {
+            const y =
+              typeof context.parsed.y === "number" ? context.parsed.y : 0;
+            return `Equity: ${y.toFixed(2)}%`;
+          },
         },
       },
     },
@@ -241,7 +245,7 @@ export default function Home() {
     <div className="min-h-screen p-8">
       <main className="flex flex-col items-center gap-8 max-w-7xl mx-auto">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
-          PLO Equity Graph Drawer
+          PLO Equity Distribution Graph
         </h1>
 
         <GameModeSelector
@@ -271,6 +275,9 @@ export default function Home() {
               />
             </div>
             <div className="flex flex-col gap-2">
+              <label htmlFor="opponentHandRange" className="text-gray-300">
+                Opponent range:
+              </label>
               <textarea
                 id="opponentHandRange"
                 value={opponentHandRange}
@@ -358,10 +365,8 @@ export default function Home() {
                 <p className="font-semibold">Average Equity</p>
                 <p className="text-xl">
                   {(
-                    equityData.reduce(
-                      (sum, [_, equity]) => sum + Number(equity),
-                      0
-                    ) / equityData.length
+                    equityData.reduce((sum, pair) => sum + Number(pair[1]), 0) /
+                    equityData.length
                   ).toFixed(2)}
                   %
                 </p>
