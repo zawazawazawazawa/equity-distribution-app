@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
-
-	// "math/rand" // Removed unused import
-	// "time"      // Removed unused import
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -429,6 +428,8 @@ func judgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker
 
 // calculateHandVsRangeEquity は1つのハンドと複数のハンドのレンジに対してエクイティを計算
 func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.Card, board []poker.Card) []HandVsRangeResult {
+	rand.Seed(time.Now().UnixNano()) // Seed the random number generator
+
 	var results []HandVsRangeResult
 	var mu sync.Mutex // 結果スライスへのアクセスを保護するためのMutex
 	var wg sync.WaitGroup
@@ -449,8 +450,22 @@ func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.C
 	log.Printf("Using %d CPUs for parallel execution in calculateHandVsRangeEquity", numCPU)
 	semaphore := make(chan struct{}, numCPU) // 同時実行数をCPUコア数に制限
 
+	// Determine which opponent hands to process
+	handsToProcess := opponentHands
+	if len(opponentHands) > 10000 {
+		log.Printf("Sampling 10000 hands from %d opponent hands", len(opponentHands))
+		shuffledOpponentHands := make([][]poker.Card, len(opponentHands))
+		copy(shuffledOpponentHands, opponentHands)
+		rand.Shuffle(len(shuffledOpponentHands), func(i, j int) {
+			shuffledOpponentHands[i], shuffledOpponentHands[j] = shuffledOpponentHands[j], shuffledOpponentHands[i]
+		})
+		handsToProcess = shuffledOpponentHands[:10000]
+	} else {
+		log.Printf("Processing all %d opponent hands (less than or equal to 10000)", len(opponentHands))
+	}
+
 	// 各オポーネントハンドに対してエクイティを計算
-	for _, opponentHand := range opponentHands {
+	for _, opponentHand := range handsToProcess { // Changed from opponentHands to handsToProcess
 		wg.Add(1)               // WaitGroupのカウンタをインクリメント
 		semaphore <- struct{}{} // セマフォを取得（空きができるまでブロック）
 
