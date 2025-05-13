@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -522,6 +523,73 @@ func max(a, b int) int {
 	return b
 }
 
+// loadOpponentRangeFromPreset loads opponent range from CSV file based on preset name
+func loadOpponentRangeFromPreset(preset string) (string, error) {
+	var filePath string
+	baseDir := "data/six_handed_100bb_midrake"
+
+	// プリセット値に基づいてファイルパスを決定
+	switch preset {
+	case "SRP BB call vs UTG open":
+		filePath = fmt.Sprintf("%s/srp/bb_call_vs_utg.csv", baseDir)
+	case "SRP BB call vs BTN open":
+		filePath = fmt.Sprintf("%s/srp/bb_call_vs_btn.csv", baseDir)
+	case "SRP BTN call vs UTG open":
+		filePath = fmt.Sprintf("%s/srp/btn_call_vs_utg.csv", baseDir)
+	case "3BP UTG call vs BB 3bet":
+		filePath = fmt.Sprintf("%s/3bp/utg_call_vs_bb.csv", baseDir)
+	case "3BP UTG call vs BTN 3bet":
+		filePath = fmt.Sprintf("%s/3bp/utg_call_vs_btn.csv", baseDir)
+	case "3BP BTN call vs BB 3bet":
+		filePath = fmt.Sprintf("%s/3bp/btn_call_vs_bb.csv", baseDir)
+	default:
+		return "", fmt.Errorf("unknown preset: %s", preset)
+	}
+
+	log.Printf("Loading opponent range from file: %s", filePath)
+
+	// CSVファイルを読み込む
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Error reading CSV file: %v", err)
+		// エラーが発生した場合はpanicを発生させる
+		return "", fmt.Errorf("failed to read CSV file: %v", err)
+	}
+
+	// CSVの内容をカンマ区切りの文字列に変換
+	lines := strings.Split(string(content), "\n")
+	log.Printf("CSV file content: %s", lines)
+
+	var hands []string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// CSVの各行からすべてのハンドを抽出
+		parts := strings.Split(line, ",")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+
+			// @記号がある場合は、その前の部分だけを使用
+			handParts := strings.Split(part, "@")
+			hand := handParts[0]
+
+			if hand != "" {
+				hands = append(hands, hand)
+			}
+		}
+	}
+
+	// カンマ区切りの文字列に変換
+	return strings.Join(hands, ","), nil
+}
+
 // カードをソートするためのヘルパー関数
 func sortCards(cards []string) []string {
 	sorted := make([]string, len(cards))
@@ -640,6 +708,7 @@ func handleHandVsRangeCalculation(w http.ResponseWriter, r *http.Request) {
 	var requestData struct {
 		YourHand       string   `json:"yourHand"`
 		OpponentsHands string   `json:"opponentsHands"`
+		SelectedPreset string   `json:"selectedPreset"`
 		FlopCards      []string `json:"flopCards"`
 	}
 
@@ -668,8 +737,24 @@ func handleHandVsRangeCalculation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// プリセットが指定されている場合は、CSVファイルからopponent rangeを読み込む
+	var opponentRangeStr string
+	if requestData.SelectedPreset != "" {
+		var err error
+		opponentRangeStr, err = loadOpponentRangeFromPreset(requestData.SelectedPreset)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error loading preset: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else if requestData.OpponentsHands != "" {
+		opponentRangeStr = requestData.OpponentsHands
+	} else {
+		http.Error(w, "Either selectedPreset or opponentsHands must be provided", http.StatusBadRequest)
+		return
+	}
+
 	// オポーネントレンジの変換
-	opponentHands := strings.Split(requestData.OpponentsHands, ",")
+	opponentHands := strings.Split(opponentRangeStr, ",")
 	var formattedOpponentHands [][]poker.Card
 	for _, hand := range opponentHands {
 		tmpHand := strings.Split(hand, "@")[0]

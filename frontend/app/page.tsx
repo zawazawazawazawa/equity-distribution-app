@@ -47,7 +47,7 @@ const ranks = [
   "K",
   "Q",
   "J",
-  "10",
+  "T", // 10をTに変更
   "9",
   "8",
   "7",
@@ -63,7 +63,9 @@ export default function Home() {
   // 既存のstate
   const [selectedCards, setSelectedCards] = useState<Card[]>([]);
   const [handRange, setHandRange] = useState("");
-  const [opponentHandRange, setOpponentHandRange] = useState("");
+  const [selectedPreset, setSelectedPreset] = useState(
+    "SRP BB call vs UTG open"
+  ); // デフォルト値を設定
   const [equityData, setEquityData] = useState<[string, number][]>([]);
   const [validationError, setValidationError] = useState<string>("");
 
@@ -139,8 +141,12 @@ export default function Home() {
         },
         body: JSON.stringify({
           yourHand: handRange.toUpperCase(),
-          opponentsHands: opponentHandRange.toUpperCase(),
-          flopCards: selectedCards.map((card) => `${card.rank}${card.suit}`),
+          selectedPreset: selectedPreset,
+          flopCards: selectedCards.map((card) => {
+            // Tを10に変換
+            const rank = card.rank === "T" ? "10" : card.rank;
+            return `${rank}${card.suit}`;
+          }),
         }),
       });
 
@@ -174,7 +180,7 @@ export default function Home() {
     }));
     // モード切替時にフォームをリセット
     setHandRange("");
-    setOpponentHandRange("");
+    setSelectedPreset("SRP BB call vs UTG open"); // デフォルト値にリセット
     setEquityData([]);
   };
 
@@ -294,17 +300,34 @@ export default function Home() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <label htmlFor="opponentHandRange" className="text-gray-300">
+              <label htmlFor="opponentPreset" className="text-gray-300">
                 Opponent range:
               </label>
-              <textarea
-                id="opponentHandRange"
-                value={opponentHandRange}
-                onChange={(e) => setOpponentHandRange(e.target.value)}
-                rows={4}
-                className="input"
-                placeholder="Enter opponent's range:"
-              />
+              <select
+                id="opponentPreset"
+                value={selectedPreset}
+                onChange={(e) => setSelectedPreset(e.target.value)}
+                className="input p-2"
+              >
+                <option value="SRP BB call vs UTG open">
+                  SRP BB call vs UTG open
+                </option>
+                <option value="SRP BB call vs BTN open">
+                  SRP BB call vs BTN open
+                </option>
+                <option value="SRP BTN call vs UTG open">
+                  SRP BTN call vs UTG open
+                </option>
+                <option value="3BP UTG call vs BB 3bet">
+                  3BP UTG call vs BB 3bet
+                </option>
+                <option value="3BP UTG call vs BTN 3bet">
+                  3BP UTG call vs BTN 3bet
+                </option>
+                <option value="3BP BTN call vs BB 3bet">
+                  3BP BTN call vs BB 3bet
+                </option>
+              </select>
             </div>
 
             <section className="border-t border-gray-800 pt-6">
