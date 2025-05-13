@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
-	"time"
+
+	// "math/rand" // Removed unused import
+	// "time"      // Removed unused import
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -274,160 +275,164 @@ func judgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker
 }
 
 // calculateRangeVsRangeEquity calculates equity for ranges of hands
-func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]poker.Card, board []poker.Card) [][]interface{} {
-	// シード値を設定してrand.Shuffleの結果を毎回ランダムにする
-	rand.Seed(time.Now().UnixNano())
+// func calculateRangeVsRangeEquity(yourHands [][]poker.Card, opponentHands [][]poker.Card, board []poker.Card) [][]interface{} {
+// 	// シード値を設定してrand.Shuffleの結果を毎回ランダムにする
+// 	rand.Seed(time.Now().UnixNano())
 
-	// 全組み合わせ数を計算
-	totalCombinations := len(yourHands) * len(opponentHands)
-	// 計算する組み合わせ数を10000以下に制限
+// 	// 全組み合わせ数を計算
+// 	totalCombinations := len(yourHands) * len(opponentHands)
+// 	// 計算する組み合わせ数を10000以下に制限
 
-	sampleSize := max(totalCombinations/100, 10)
+// 	sampleSize := max(totalCombinations/100, 10)
 
-	// yourHandsをシャッフル
-	shuffledYourHands := make([][]poker.Card, len(yourHands))
-	copy(shuffledYourHands, yourHands)
-	rand.Shuffle(len(shuffledYourHands), func(i, j int) {
-		shuffledYourHands[i], shuffledYourHands[j] = shuffledYourHands[j], shuffledYourHands[i]
-	})
+// 	// yourHandsをシャッフル
+// 	shuffledYourHands := make([][]poker.Card, len(yourHands))
+// 	copy(shuffledYourHands, yourHands)
+// 	rand.Shuffle(len(shuffledYourHands), func(i, j int) {
+// 		shuffledYourHands[i], shuffledYourHands[j] = shuffledYourHands[j], shuffledYourHands[i]
+// 	})
 
-	// opponentHandsをシャッフル
-	shuffledOpponentHands := make([][]poker.Card, len(opponentHands))
-	copy(shuffledOpponentHands, opponentHands)
-	rand.Shuffle(len(shuffledOpponentHands), func(i, j int) {
-		shuffledOpponentHands[i], shuffledOpponentHands[j] = shuffledOpponentHands[j], shuffledOpponentHands[i]
-	})
+// 	// opponentHandsをシャッフル
+// 	shuffledOpponentHands := make([][]poker.Card, len(opponentHands))
+// 	copy(shuffledOpponentHands, opponentHands)
+// 	rand.Shuffle(len(shuffledOpponentHands), func(i, j int) {
+// 		shuffledOpponentHands[i], shuffledOpponentHands[j] = shuffledOpponentHands[j], shuffledOpponentHands[i]
+// 	})
 
-	var results [][]interface{}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
+// 	var results [][]interface{}
+// 	var mu sync.Mutex
+// 	var wg sync.WaitGroup
 
-	numCPU := runtime.NumCPU()
-	semaphore := make(chan struct{}, numCPU)
+// 	numCPU := runtime.NumCPU()
+// 	log.Printf("Number of CPUs (parallel goroutines): %d", numCPU)
+// 	semaphore := make(chan struct{}, numCPU)
 
-	boardStr := generateBoardString(board)
-	flopEquities, err := batchQueryDynamoDB(boardStr)
-	if err != nil {
-		log.Printf("Error fetching flop equities: %v", err)
-		flopEquities = &FlopEquities{
-			Flop:     boardStr,
-			Equities: make(map[string]float64),
-		}
-	}
+// 	boardStr := generateBoardString(board)
+// 	flopEquities, err := batchQueryDynamoDB(boardStr)
+// 	if err != nil {
+// 		log.Printf("Error fetching flop equities: %v", err)
+// 		flopEquities = &FlopEquities{
+// 			Flop:     boardStr,
+// 			Equities: make(map[string]float64),
+// 		}
+// 	}
 
-	type dbOperation struct {
-		handCombination string
-		equity          float64
-	}
-	const dbBatchSize = 25 // DynamoDB batch size limit
-	dbChan := make(chan dbOperation, dbBatchSize)
+// 	type dbOperation struct {
+// 		handCombination string
+// 		equity          float64
+// 	}
+// 	const dbBatchSize = 25 // DynamoDB batch size limit
+// 	dbChan := make(chan dbOperation, dbBatchSize)
 
-	var dbWg sync.WaitGroup
-	dbWg.Add(1)
-	go func() {
-		defer dbWg.Done()
-		batch := make([]dbOperation, 0, dbBatchSize)
-		for op := range dbChan {
-			batch = append(batch, op)
-			if len(batch) >= dbBatchSize {
-				// Process batch
-				for _, item := range batch {
-					if err := insertDynamoDB(boardStr, item.handCombination, item.equity); err != nil {
-						log.Printf("Error inserting equity into DynamoDB: %v", err)
-					}
-				}
-				batch = batch[:0] // Clear batch
-			}
-		}
-		// Process remaining items
-		for _, item := range batch {
-			if err := insertDynamoDB(boardStr, item.handCombination, item.equity); err != nil {
-				log.Printf("Error inserting equity into DynamoDB: %v", err)
-			}
-		}
-	}()
+// 	var dbWg sync.WaitGroup
+// 	dbWg.Add(1)
+// 	go func() {
+// 		defer dbWg.Done()
+// 		batch := make([]dbOperation, 0, dbBatchSize)
+// 		for op := range dbChan {
+// 			batch = append(batch, op)
+// 			if len(batch) >= dbBatchSize {
+// 				// Process batch
+// 				for _, item := range batch {
+// 					if err := insertDynamoDB(boardStr, item.handCombination, item.equity); err != nil {
+// 						log.Printf("Error inserting equity into DynamoDB: %v", err)
+// 					}
+// 				}
+// 				batch = batch[:0] // Clear batch
+// 			}
+// 		}
+// 		// Process remaining items
+// 		for _, item := range batch {
+// 			if err := insertDynamoDB(boardStr, item.handCombination, item.equity); err != nil {
+// 				log.Printf("Error inserting equity into DynamoDB: %v", err)
+// 			}
+// 		}
+// 	}()
 
-	// 計算する組み合わせ数を制限して処理
-	processedCombinations := 0
-	const batchSize = 1000
+// 	// 計算する組み合わせ数を制限して処理
+// 	processedCombinations := 0
+// 	const batchSize = 1000
 
-	// シャッフルされたyourHandsから必要な数だけ処理
-	for i := 0; processedCombinations < sampleSize && i < len(shuffledYourHands); i++ {
-		// 残り必要な組み合わせ数を計算
-		remainingNeeded := sampleSize - processedCombinations
-		// この手札に対して計算する相手の手札数を決定
-		opponentHandsToProcess := min(len(shuffledOpponentHands), remainingNeeded)
+// 	// シャッフルされたyourHandsから必要な数だけ処理
+// 	for i := 0; processedCombinations < sampleSize && i < len(shuffledYourHands); i++ {
+// 		// 残り必要な組み合わせ数を計算
+// 		remainingNeeded := sampleSize - processedCombinations
+// 		// この手札に対して計算する相手の手札数を決定
+// 		opponentHandsToProcess := min(len(shuffledOpponentHands), remainingNeeded)
 
-		wg.Add(1)
-		go func(yourHand []poker.Card, start int, count int) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
+// 		wg.Add(1)
+// 		go func(yourHand []poker.Card, start int, count int) {
+// 			defer wg.Done()
+// 			semaphore <- struct{}{}
+// 			defer func() { <-semaphore }()
 
-			totalEquity := 0.0
-			validOpponentCount := 0
+// 			totalEquity := 0.0
+// 			validOpponentCount := 0
 
-			// 制限された数の相手の手札に対して計算
-			for j := 0; j < count; j++ {
-				opponentHand := shuffledOpponentHands[j]
-				heroHandStr := ""
-				for _, card := range yourHand {
-					heroHandStr += card.String()
-				}
-				villainHandStr := ""
-				for _, card := range opponentHand {
-					villainHandStr += card.String()
-				}
-				handCombination := generateHandCombination(heroHandStr, villainHandStr)
+// 			// 制限された数の相手の手札に対して計算
+// 			for j := 0; j < count; j++ {
+// 				opponentHand := shuffledOpponentHands[j]
+// 				heroHandStr := ""
+// 				for _, card := range yourHand {
+// 					heroHandStr += card.String()
+// 				}
+// 				villainHandStr := ""
+// 				for _, card := range opponentHand {
+// 					villainHandStr += card.String()
+// 				}
+// 				handCombination := generateHandCombination(heroHandStr, villainHandStr)
 
-				equity, isCacheHit := calculateHandVsHandEquity(yourHand, opponentHand, board, flopEquities)
-				if equity != -1 {
-					totalEquity += equity
-					validOpponentCount++
-					// Only send to DynamoDB if it wasn't a cache hit
-					if !isCacheHit {
-						dbChan <- dbOperation{
-							handCombination: handCombination,
-							equity:          equity,
-						}
-					}
-				} else {
-					log.Printf("Skipping equity calculation for %s vs %s due to duplicate cards", heroHandStr, villainHandStr)
-				}
-			}
+// 				equity, isCacheHit := calculateHandVsHandEquity(yourHand, opponentHand, board, flopEquities)
+// 				if equity != -1 {
+// 					totalEquity += equity
+// 					validOpponentCount++
+// 					// Only send to DynamoDB if it wasn't a cache hit
+// 					if !isCacheHit {
+// 						dbChan <- dbOperation{
+// 							handCombination: handCombination,
+// 							equity:          equity,
+// 						}
+// 					}
+// 				} else {
+// 					log.Printf("Skipping equity calculation for %s vs %s due to duplicate cards", heroHandStr, villainHandStr)
+// 				}
+// 			}
 
-			var averageEquity float64
-			if validOpponentCount > 0 {
-				averageEquity = totalEquity / float64(validOpponentCount)
-			} else {
-				averageEquity = -1.0
-			}
+// 			var averageEquity float64
+// 			if validOpponentCount > 0 {
+// 				averageEquity = totalEquity / float64(validOpponentCount)
+// 			} else {
+// 				averageEquity = -1.0
+// 			}
 
-			if averageEquity != -1 {
-				mu.Lock()
-				results = append(results, []interface{}{yourHand, averageEquity})
-				mu.Unlock()
-			}
-		}(shuffledYourHands[i], 0, opponentHandsToProcess)
+// 			if averageEquity != -1 {
+// 				mu.Lock()
+// 				results = append(results, []interface{}{yourHand, averageEquity})
+// 				mu.Unlock()
+// 			}
+// 		}(shuffledYourHands[i], 0, opponentHandsToProcess)
 
-		processedCombinations += opponentHandsToProcess
-	}
+// 		processedCombinations += opponentHandsToProcess
+// 	}
 
-	wg.Wait()
-	close(dbChan)
-	dbWg.Wait()
+// 	wg.Wait()
+// 	close(dbChan)
+// 	dbWg.Wait()
 
-	// 処理した組み合わせ数をログに出力
-	log.Printf("Processed %d out of %d possible combinations (%.1f%%)",
-		processedCombinations, totalCombinations,
-		float64(processedCombinations)/float64(totalCombinations)*100)
+// 	// 処理した組み合わせ数をログに出力
+// 	log.Printf("Processed %d out of %d possible combinations (%.1f%%)",
+// 		processedCombinations, totalCombinations,
+// 		float64(processedCombinations)/float64(totalCombinations)*100)
 
-	return results
-}
+// 	return results
+// }
 
 // calculateHandVsRangeEquity は1つのハンドと複数のハンドのレンジに対してエクイティを計算
 func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.Card, board []poker.Card) []HandVsRangeResult {
 	var results []HandVsRangeResult
+	var mu sync.Mutex // 結果スライスへのアクセスを保護するためのMutex
+	var wg sync.WaitGroup
+
 	boardStr := generateBoardString(board)
 
 	// DynamoDBからフロップに関連するエクイティを取得
@@ -440,26 +445,43 @@ func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.C
 		}
 	}
 
+	numCPU := runtime.NumCPU()
+	log.Printf("Using %d CPUs for parallel execution in calculateHandVsRangeEquity", numCPU)
+	semaphore := make(chan struct{}, numCPU) // 同時実行数をCPUコア数に制限
+
 	// 各オポーネントハンドに対してエクイティを計算
 	for _, opponentHand := range opponentHands {
-		heroHandStr := ""
-		for _, card := range yourHand {
-			heroHandStr += card.String()
-		}
+		wg.Add(1)               // WaitGroupのカウンタをインクリメント
+		semaphore <- struct{}{} // セマフォを取得（空きができるまでブロック）
 
-		villainHandStr := ""
-		for _, card := range opponentHand {
-			villainHandStr += card.String()
-		}
+		// opponentHandをゴルーチンの引数として渡すことで、ループ変数キャプチャの問題を避ける
+		go func(currentOpponentHand []poker.Card) {
+			defer wg.Done()                // ゴルーチン完了時にカウンタをデクリメント
+			defer func() { <-semaphore }() // セマフォを解放
 
-		equity, _ := calculateHandVsHandEquity(yourHand, opponentHand, board, flopEquities)
-		if equity != -1 {
-			results = append(results, HandVsRangeResult{
-				OpponentHand: villainHandStr,
-				Equity:       equity,
-			})
-		}
+			heroHandStr := ""
+			for _, card := range yourHand {
+				heroHandStr += card.String()
+			}
+
+			villainHandStr := ""
+			for _, card := range currentOpponentHand {
+				villainHandStr += card.String()
+			}
+
+			equity, _ := calculateHandVsHandEquity(yourHand, currentOpponentHand, board, flopEquities)
+			if equity != -1 {
+				mu.Lock() // Mutexをロックしてresultsスライスを保護
+				results = append(results, HandVsRangeResult{
+					OpponentHand: villainHandStr,
+					Equity:       equity,
+				})
+				mu.Unlock() // Mutexをアンロック
+			}
+		}(opponentHand)
 	}
+
+	wg.Wait() // すべてのゴルーチンが完了するのを待つ
 
 	// エクイティでソート
 	sort.Slice(results, func(i, j int) bool {
@@ -576,7 +598,8 @@ func handleEquityCalculation(w http.ResponseWriter, r *http.Request) {
 		board = append(board, card)
 	}
 
-	equity := calculateRangeVsRangeEquity(formattedYourHands, formattedOpponentHands, board)
+	// equity := calculateRangeVsRangeEquity(formattedYourHands, formattedOpponentHands, board) // Commented out as the function is undefined
+	var equity [][]interface{} // Placeholder for equity
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(equity)

@@ -199,9 +199,12 @@ export default function Home() {
     responsive: true,
     scales: {
       x: {
-        display: false, // 横軸を非表示に
+        display: true, // falseからtrueに変更
         grid: {
-          display: false, // グリッドも非表示に
+          color: "rgba(255, 255, 255, 0.1)", // グリッドの色を設定
+        },
+        ticks: {
+          color: "#9CA3AF", // 軸ラベルの色を設定
         },
       },
       y: {
@@ -341,9 +344,9 @@ export default function Home() {
               <h2 className="text-2xl font-semibold text-blue-400">
                 Hand vs Range Equity
               </h2>
-              <div className="text-sm text-gray-400">
+              {/* <div className="text-sm text-gray-400">
                 {equityData.length} combinations
-              </div>
+              </div> */}
             </div>
             <div style={{ height: "400px" }}>
               <Bar data={data} options={options} />
