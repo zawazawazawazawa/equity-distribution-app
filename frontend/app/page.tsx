@@ -2,8 +2,6 @@
 import { useState } from "react";
 import { Bar } from "react-chartjs-2";
 import { Card } from "./components/Card";
-import { GameModeSelector } from "./components/GameModeSelector";
-import { GameMode, GameModeState } from "../types/poker";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -27,10 +25,6 @@ ChartJS.register(
   Tooltip,
   Legend
 );
-
-type ApiResponse =
-  | Array<[string, number]>
-  | { equity: Array<[string, number]> };
 
 type Card = {
   rank: string;
@@ -68,13 +62,6 @@ export default function Home() {
   ); // デフォルト値を設定
   const [equityData, setEquityData] = useState<[string, number][]>([]);
   const [validationError, setValidationError] = useState<string>("");
-
-  // 新規追加のstate
-  const [gameState, setGameState] = useState<GameModeState>({
-    mode: "hand-vs-range", // デフォルトをhand-vs-rangeに変更
-    heroHand: "",
-    villainInput: "",
-  });
 
   const formatHandString = (hand: string): string => {
     // @記号で分割し、最初の部分だけを取得
@@ -128,10 +115,7 @@ export default function Home() {
       return;
     }
 
-    const endpoint =
-      gameState.mode === "hand-vs-range"
-        ? "calculate-hand-vs-range"
-        : "calculate-equity";
+    const endpoint = "calculate-hand-vs-range";
 
     try {
       const response = await fetch(`http://localhost:8080/${endpoint}`, {
@@ -150,48 +134,18 @@ export default function Home() {
         }),
       });
 
-      if (gameState.mode === "hand-vs-range") {
-        const data: HandVsRangeResult[] = await response.json();
-        setEquityData(
-          data.map((result) => [result.opponentHand, result.equity])
-        );
-      } else {
-        const data: ApiResponse = await response.json();
-        if (Array.isArray(data)) {
-          setEquityData(data.sort((a, b) => b[1] - a[1]));
-        } else if (
-          data &&
-          typeof data === "object" &&
-          Array.isArray(data.equity)
-        ) {
-          setEquityData(data.equity.sort((a, b) => b[1] - a[1]));
-        }
-      }
+      const data: HandVsRangeResult[] = await response.json();
+      setEquityData(data.map((result) => [result.opponentHand, result.equity]));
     } catch (error) {
       console.error("Error calculating equity:", error);
     }
-  };
-
-  const handleModeChange = (newMode: GameMode) => {
-    setGameState((prev) => ({
-      ...prev,
-      mode: newMode,
-      villainInput: newMode === "hand-vs-range" ? "" : [],
-    }));
-    // モード切替時にフォームをリセット
-    setHandRange("");
-    setSelectedPreset("SRP BB call vs UTG open"); // デフォルト値にリセット
-    setEquityData([]);
   };
 
   const data = {
     labels: [], // ラベルは不要になるため空の配列に
     datasets: [
       {
-        label:
-          gameState.mode === "hand-vs-range"
-            ? "Equity vs Opponent Hands"
-            : "Equity Distribution",
+        label: "Equity vs Opponent Hands",
         data: equityData.map((item, index, arr) => ({
           x: arr.length <= 1 ? 0 : (index / (arr.length - 1)) * 100,
           y: Number(item[1]),
@@ -273,30 +227,19 @@ export default function Home() {
           PLO Equity Distribution Graph
         </h1>
 
-        <GameModeSelector
-          currentMode={gameState.mode}
-          onModeChange={handleModeChange}
-        />
-
         <section className="card w-full max-w-2xl">
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
             <div className="flex flex-col gap-2">
               <label htmlFor="handRange" className="text-gray-300">
-                {gameState.mode === "hand-vs-range"
-                  ? "Your Hand:"
-                  : "Your Range:"}
+                Your Hand:
               </label>
-              <textarea
+              <input
+                type="text"
                 id="handRange"
                 value={handRange}
                 onChange={(e) => setHandRange(e.target.value)}
-                rows={gameState.mode === "hand-vs-range" ? 1 : 4}
                 className="input"
-                placeholder={
-                  gameState.mode === "hand-vs-range"
-                    ? "Enter your hand"
-                    : "Enter your range"
-                }
+                placeholder="Enter your hand"
               />
             </div>
             <div className="flex flex-col gap-2">
