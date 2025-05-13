@@ -179,14 +179,17 @@ export default function Home() {
   };
 
   const data = {
-    labels: equityData.map((item) => item[0] as string),
+    labels: [], // ラベルは不要になるため空の配列に
     datasets: [
       {
         label:
           gameState.mode === "hand-vs-range"
             ? "Equity vs Opponent Hands"
             : "Equity Distribution",
-        data: equityData.map((item) => Number(item[1])),
+        data: equityData.map((item, index, arr) => ({
+          x: arr.length <= 1 ? 0 : (index / (arr.length - 1)) * 100,
+          y: Number(item[1]),
+        })),
         backgroundColor: "rgba(54, 162, 235, 0.5)",
         borderColor: "rgba(54, 162, 235, 1)",
         borderWidth: 1,
@@ -199,12 +202,24 @@ export default function Home() {
     responsive: true,
     scales: {
       x: {
-        display: true, // falseからtrueに変更
-        grid: {
-          color: "rgba(255, 255, 255, 0.1)", // グリッドの色を設定
-        },
+        type: "linear" as const,
+        min: 5,
+        max: 95,
+        display: true,
+        // grid: {
+        //   color: "rgba(255, 255, 255, 0.1)",
+        // },
         ticks: {
-          color: "#9CA3AF", // 軸ラベルの色を設定
+          color: "#9CA3AF",
+          stepSize: 10,
+          callback: (tickValue: number | string) => {
+            return tickValue + "%";
+          },
+        },
+        title: {
+          display: true,
+          text: "Percentage of hand",
+          color: "#9CA3AF",
         },
       },
       y: {
@@ -231,7 +246,8 @@ export default function Home() {
         callbacks: {
           title: (tooltipItems: TooltipItem<"bar">[]) => {
             const index = tooltipItems[0]?.dataIndex ?? 0;
-            return `Hand: ${data.labels[index]}`;
+            const originalLabel = equityData[index]?.[0];
+            return originalLabel ? `Opponent Hand: ${originalLabel}` : "";
           },
           label: (context: TooltipItem<"bar">) => {
             const y =
