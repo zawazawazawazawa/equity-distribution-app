@@ -186,27 +186,75 @@ func main() {
 	// 翌日の日付を取得
 	tomorrow := time.Now().AddDate(0, 0, 1)
 
-	// 結果をPostgreSQLに保存
+	// 結果をシナリオごとにグループ化
+	scenarioResults := make(map[string][]EquityResult)
 	for _, result := range results {
-		// 結果をJSON形式に変換
-		resultJSON, err := json.Marshal(result.Equities)
-		if err != nil {
-			log.Printf("Error marshaling equities to JSON: %v", err)
+		scenarioName := result.Scenario.Name
+		scenarioResults[scenarioName] = append(scenarioResults[scenarioName], result)
+	}
+
+	// 各シナリオごとに一つのレコードとして保存
+	for scenarioName, scenarioResultList := range scenarioResults {
+		if len(scenarioResultList) == 0 {
 			continue
 		}
 
-		// PostgreSQLに保存
+		// VillainEquity構造体を定義
+		type VillainEquity struct {
+			VillainHand string  `json:"villain_hand"`
+			Equity      float64 `json:"equity"`
+		}
+
+		// このシナリオのすべての結果から対戦相手のハンドとエクイティの配列を作成
+		allVillainEquities := []VillainEquity{}
+
+		// 平均エクイティの計算用
+		totalEquity := 0.0
+
+		// 最初の結果からheroHandとflopを取得（代表値として）
+		var heroHand string
+		var flop string
+		if len(scenarioResultList) > 0 {
+			heroHand = scenarioResultList[0].HeroHand
+			flop = pkrlib.GenerateBoardString(scenarioResultList[0].Flop)
+		}
+
+		for _, result := range scenarioResultList {
+			// Equitiesマップを配列に変換して追加
+			for villainHand, equity := range result.Equities {
+				allVillainEquities = append(allVillainEquities, VillainEquity{
+					VillainHand: villainHand,
+					Equity:      equity,
+				})
+			}
+
+			totalEquity += result.AverageEquity
+		}
+
+		// VillainEquities配列をJSON文字列に変換
+		villainEquitiesJSON, err := json.Marshal(allVillainEquities)
+		if err != nil {
+			log.Printf("Error marshaling villain equities for scenario %s to JSON: %v", scenarioName, err)
+			continue
+		}
+
+		// 平均エクイティはすべての結果の平均を使用
+		averageEquity := totalEquity / float64(len(scenarioResultList))
+
+		// シナリオごとに一つのレコードとしてPostgreSQLに保存
 		err = db.InsertDailyQuizResult(
 			pgDB,
 			tomorrow,
-			result.Scenario.Name,
-			result.HeroHand,
-			pkrlib.GenerateBoardString(result.Flop),
-			string(resultJSON),
-			result.AverageEquity,
+			scenarioName,
+			heroHand,
+			flop,
+			string(villainEquitiesJSON), // VillainEquitiesの配列だけをJSON文字列として保存
+			averageEquity,
 		)
 		if err != nil {
-			log.Printf("Error saving result to PostgreSQL: %v", err)
+			log.Printf("Error saving villain equities for scenario %s to PostgreSQL: %v", scenarioName, err)
+		} else {
+			log.Printf("Successfully saved villain equities for scenario %s as one record to PostgreSQL", scenarioName)
 		}
 	}
 
