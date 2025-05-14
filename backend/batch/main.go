@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/chehsunliu/poker"
@@ -62,8 +61,6 @@ var scenarios = []Scenario{
 
 // バッチ処理の設定
 type BatchConfig struct {
-	NumCalculations  int    // 計算回数
-	NumWorkers       int    // ワーカー数
 	DynamoDBEndpoint string // DynamoDBエンドポイント
 	DynamoDBRegion   string // DynamoDBリージョン
 	LogFile          string // ログファイル
@@ -83,18 +80,14 @@ func main() {
 	// ログの設定
 	setupLogging(config.LogFile)
 
-	log.Printf("Starting sequential processing for %d calculations", config.NumCalculations)
+	log.Printf("Starting sequential processing for %d scenarios", len(scenarios))
 
 	// 乱数生成器の初期化
 	rand.Seed(time.Now().UnixNano())
 
-	// 直列で各ジョブを実行
-	for j := 1; j <= config.NumCalculations; j++ {
-		log.Printf("Starting job %d", j)
-
-		// ジョブIDに基づいてシナリオを選択（6つのシナリオを順番に処理）
-		scenarioIndex := (j - 1) % len(scenarios)
-		scenario := scenarios[scenarioIndex]
+	// 直列で各シナリオを実行
+	for i, scenario := range scenarios {
+		log.Printf("Starting scenario %d: %s", i+1, scenario.Name)
 		log.Printf("Selected scenario: %s", scenario.Name)
 
 		// シナリオに基づいてハンドとフロップを生成
@@ -104,7 +97,7 @@ func main() {
 		equities, err := calculateEquity(heroHand, opponentRange, flop, config)
 		if err != nil {
 			log.Printf("Error calculating equity: %v", err)
-			log.Printf("Job %d failed: %v", j, err)
+			log.Printf("Scenario %d failed: %v", i+1, err)
 			continue
 		}
 
@@ -112,23 +105,20 @@ func main() {
 		err = saveResultToDynamoDB(heroHand, opponentRange, flop, equities, config)
 		if err != nil {
 			log.Printf("Error saving result to DynamoDB: %v", err)
-			log.Printf("Job %d failed: %v", j, err)
+			log.Printf("Scenario %d failed: %v", i+1, err)
 			continue
 		}
 
-		log.Printf("Job %d completed: %s - Flop: %s, Hero: %s", j, scenario.Name, pkrlib.GenerateBoardString(flop), heroHand)
+		log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s", i+1, scenario.Name, pkrlib.GenerateBoardString(flop), heroHand)
 	}
 
-	log.Println("Sequential processing completed")
+	log.Println("All scenarios processed successfully")
 }
 
 // コマンドライン引数を解析する
 func parseFlags() *BatchConfig {
 	config := &BatchConfig{}
 
-	flag.IntVar(&config.NumCalculations, "n", 100, "Number of equity calculations to perform")
-	// ワーカー数の引数は残しておくが、使わない（後方互換性のため）
-	flag.IntVar(&config.NumWorkers, "w", 1, "Number of worker goroutines (ignored in sequential mode)")
 	flag.StringVar(&config.DynamoDBEndpoint, "endpoint", "http://localhost:4566", "DynamoDB endpoint URL")
 	flag.StringVar(&config.DynamoDBRegion, "region", "us-east-1", "AWS region")
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
@@ -147,41 +137,6 @@ func setupLogging(logFile string) {
 			log.Fatalf("Error opening log file: %v", err)
 		}
 		log.SetOutput(f)
-	}
-}
-
-// ワーカー関数
-func worker(id int, jobs <-chan int, results chan<- string, wg *sync.WaitGroup, config *BatchConfig) {
-	defer wg.Done()
-
-	for j := range jobs {
-		log.Printf("Worker %d starting job %d", id, j)
-
-		// ジョブIDに基づいてシナリオを選択（6つのシナリオを順番に処理）
-		scenarioIndex := (j - 1) % len(scenarios)
-		scenario := scenarios[scenarioIndex]
-		log.Printf("Selected scenario: %s", scenario.Name)
-
-		// シナリオに基づいてハンドとフロップを生成
-		heroHand, opponentRange, flop := generateHandsAndFlop(scenario, config)
-
-		// equity計算
-		equities, err := calculateEquity(heroHand, opponentRange, flop, config)
-		if err != nil {
-			log.Printf("Error calculating equity: %v", err)
-			results <- fmt.Sprintf("Job %d failed: %v", j, err)
-			continue
-		}
-
-		// 結果をDynamoDBに保存
-		err = saveResultToDynamoDB(heroHand, opponentRange, flop, equities, config)
-		if err != nil {
-			log.Printf("Error saving result to DynamoDB: %v", err)
-			results <- fmt.Sprintf("Job %d failed: %v", j, err)
-			continue
-		}
-
-		results <- fmt.Sprintf("Job %d completed: %s - Flop: %s, Hero: %s", j, scenario.Name, pkrlib.GenerateBoardString(flop), heroHand)
 	}
 }
 
