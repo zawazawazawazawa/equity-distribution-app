@@ -233,7 +233,7 @@ export default function Home() {
               ホーム
             </Link>
             <Link
-              href="/daily-quiz-results"
+              href="/daily-quiz"
               className="text-blue-400 hover:text-blue-300"
             >
               Daily Quiz
