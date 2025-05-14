@@ -375,6 +375,71 @@ func handleHandVsRangeCalculation(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
+// handleGetDailyQuizResults は日付に基づいてクイズ結果を取得するハンドラー
+func handleGetDailyQuizResults(w http.ResponseWriter, r *http.Request) {
+	// CORSヘッダーの設定
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// dateパラメータの取得
+	dateStr := r.URL.Query().Get("date")
+	if dateStr == "" {
+		http.Error(w, "Date parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// dateパラメータのバリデーション（yyyy-mm-dd形式）
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		http.Error(w, "Invalid date format. Use yyyy-mm-dd", http.StatusBadRequest)
+		return
+	}
+
+	// PostgreSQL接続の設定
+	pgConfig := db.PostgresConfig{
+		Host:     "localhost", // 環境変数から取得するように変更可能
+		Port:     5432,
+		User:     "postgres",
+		Password: "postgres",
+		DBName:   "plo_equity",
+	}
+
+	// PostgreSQLに接続
+	pgDB, err := db.GetPostgresConnection(pgConfig)
+	if err != nil {
+		log.Printf("Failed to connect to PostgreSQL: %v", err)
+		http.Error(w, "Database connection error", http.StatusInternalServerError)
+		return
+	}
+	defer pgDB.Close()
+
+	// 指定された日付のデータを取得
+	results, err := db.GetDailyQuizResultsByDate(pgDB, date)
+	if err != nil {
+		log.Printf("Error fetching daily quiz results: %v", err)
+		http.Error(w, "Failed to fetch data", http.StatusInternalServerError)
+		return
+	}
+
+	// 結果をJSONで返す
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(results); err != nil {
+		log.Printf("Error encoding JSON response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
 // main initializes the HTTP server
 func main() {
 	// Load environment variables from .env file
@@ -385,6 +450,7 @@ func main() {
 
 	http.HandleFunc("/calculate-equity", handleEquityCalculation)
 	http.HandleFunc("/calculate-hand-vs-range", handleHandVsRangeCalculation)
+	http.HandleFunc("/api/daily-quiz-results", handleGetDailyQuizResults)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Equity Distribution Backend is running")
 	})

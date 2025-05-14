@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -57,4 +58,64 @@ func InsertDailyQuizResult(db *sql.DB, date time.Time, scenario string, heroHand
 
 	log.Printf("Successfully inserted data into PostgreSQL with ID: %d", id)
 	return nil
+}
+
+// GetDailyQuizResultsByDate は指定された日付のクイズ結果を取得します
+func GetDailyQuizResultsByDate(db *sql.DB, date time.Time) ([]map[string]interface{}, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT id, date, scenario, hero_hand, flop, result, average_equity, created_at
+		FROM daily_quiz_results
+		WHERE date = $1
+		ORDER BY id
+	`
+
+	rows, err := db.QueryContext(ctx, query, date)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query data from PostgreSQL: %v", err)
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var id int
+		var date time.Time
+		var scenario, heroHand, flop, result string
+		var averageEquity float64
+		var createdAt time.Time
+
+		if err := rows.Scan(&id, &date, &scenario, &heroHand, &flop, &result, &averageEquity, &createdAt); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %v", err)
+		}
+
+		// JSONデータをパース
+		var resultData interface{}
+		if result != "" {
+			if err := json.Unmarshal([]byte(result), &resultData); err != nil {
+				log.Printf("Warning: Failed to parse JSON result: %v", err)
+				// エラーがあってもデータは返す
+			}
+		}
+
+		// 結果をマップに格納
+		item := map[string]interface{}{
+			"id":             id,
+			"date":           date.Format("2006-01-02"),
+			"scenario":       scenario,
+			"hero_hand":      heroHand,
+			"flop":           flop,
+			"result":         resultData,
+			"average_equity": averageEquity,
+			"created_at":     createdAt,
+		}
+		results = append(results, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %v", err)
+	}
+
+	return results, nil
 }
