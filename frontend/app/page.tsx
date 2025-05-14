@@ -236,7 +236,7 @@ export default function Home() {
               href="/daily-quiz-results"
               className="text-blue-400 hover:text-blue-300"
             >
-              デイリークイズ結果
+              Daily Quiz
             </Link>
           </nav>
         </div>

@@ -293,7 +293,7 @@ func setupLogging(logFile string) {
 
 // シナリオに基づいてハンドとフロップを生成する
 func generateHandsAndFlop(scenario Scenario, config *BatchConfig) (string, string, []poker.Card) {
-	// オポーネントレンジはプリセットから読み込む
+	// Opponentレンジはプリセットから読み込む
 	opponentRange, err := fileio.LoadOpponentRangeFromPreset(scenario.PresetName, config.DataDir)
 	if err != nil {
 		// 失敗したらpanicを投げる
@@ -379,7 +379,7 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 		return nil, fmt.Errorf("invalid hero hand format: %s", heroHand)
 	}
 
-	// オポーネントレンジをpoker.Card形式に変換
+	// Opponentレンジをpoker.Card形式に変換
 	opponentHands := strings.Split(opponentRange, ",")
 	var formattedOpponentHands [][]poker.Card
 	for _, hand := range opponentHands {

@@ -70,7 +70,7 @@ func CalculateHandVsRangeEquityParallel(yourHand []poker.Card, opponentHands [][
 	log.Printf("Using %d CPUs for parallel execution in CalculateHandVsRangeEquityParallel", numCPU)
 	semaphore := make(chan struct{}, numCPU) // 同時実行数をCPUコア数に制限
 
-	// 各オポーネントハンドに対してequity計算を並列で実行
+	// 各Opponentハンドに対してequity計算を並列で実行
 	for _, opponentHand := range opponentHands {
 		// カード重複チェック
 		if HasCardDuplicates(yourHand, opponentHand, board) {

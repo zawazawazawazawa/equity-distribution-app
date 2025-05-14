@@ -221,7 +221,7 @@ export default function DailyQuizResults() {
       <main className="flex flex-col items-center gap-8 max-w-7xl mx-auto">
         <div className="w-full flex flex-col items-center mb-4">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent mb-4">
-            デイリークイズ結果
+            Daily Quiz
           </h1>
           <nav className="flex gap-4">
             <Link href="/" className="text-blue-400 hover:text-blue-300">
@@ -231,7 +231,7 @@ export default function DailyQuizResults() {
               href="/daily-quiz-results"
               className="text-blue-400 hover:text-blue-300"
             >
-              デイリークイズ結果
+              Daily Quiz
             </Link>
           </nav>
         </div>

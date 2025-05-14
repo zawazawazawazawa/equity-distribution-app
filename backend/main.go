@@ -345,7 +345,7 @@ func handleHandVsRangeCalculation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// オポーネントレンジの変換
+	// Opponentレンジの変換
 	opponentHands := strings.Split(opponentRangeStr, ",")
 	var formattedOpponentHands [][]poker.Card
 	for _, hand := range opponentHands {
