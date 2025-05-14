@@ -268,12 +268,6 @@ export default function DailyQuiz() {
             >
               Daily Quiz
             </Link>
-            <Link
-              href="/daily-quiz-results"
-              className="text-blue-400 hover:text-blue-300"
-            >
-              Quiz Results
-            </Link>
           </nav>
         </div>
 
