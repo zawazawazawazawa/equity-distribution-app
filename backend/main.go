@@ -6,20 +6,20 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"os"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/chehsunliu/poker"
 	"github.com/joho/godotenv"
+
+	"equity-distribution-backend/pkg/db"
+	"equity-distribution-backend/pkg/fileio"
+	"equity-distribution-backend/pkg/models"
+	pkrlib "equity-distribution-backend/pkg/poker"
 )
 
 // HandRange represents a user's hand
@@ -33,74 +33,28 @@ type YourDynamoDBItem struct {
 	// Add more fields as needed
 }
 
-// FlopEquities represents all equity calculations for a specific flop
-type FlopEquities struct {
-	Flop     string
-	Equities map[string]float64 // handCombination -> equity
-}
-
-// 新しい構造体を追加
-type HandVsRangeResult struct {
-	OpponentHand string  `json:"opponentHand"`
-	Equity       float64 `json:"equity"`
-}
-
 // getDynamoDBClient initializes and returns a DynamoDB client
 func getDynamoDBClient() *dynamodb.DynamoDB {
-	// AWS設定
-	config := &aws.Config{
-		Region:   aws.String("us-east-1"),             // LocalStackのデフォルトリージョン
-		Endpoint: aws.String("http://localhost:4566"), // LocalStackのエンドポイント
+	config := db.Config{
+		Region:   "us-east-1",
+		Endpoint: "http://localhost:4566",
 	}
-
-	// 認証情報を設定（LocalStackの場合はダミーでOK）
-	config.Credentials = credentials.NewStaticCredentials("test", "test", "")
-
-	// セッションを作成
-	sess := session.Must(session.NewSession(config))
-
-	// DynamoDBクライアントを作成
-	return dynamodb.New(sess)
+	return db.GetDynamoDBClient(config)
 }
 
 // batchQueryDynamoDB retrieves all equity calculations for a specific flop
-func batchQueryDynamoDB(flop string) (*FlopEquities, error) {
+func batchQueryDynamoDB(flop string) (*models.FlopEquities, error) {
 	svc := getDynamoDBClient()
 
-	// Query parameters for scanning items with the same flop
-	log.Printf("Querying DynamoDB for flop: %s", flop)
-	input := &dynamodb.QueryInput{
-		TableName:              aws.String("PloEquity"),
-		KeyConditionExpression: aws.String("Flop = :flop"),
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":flop": {
-				S: aws.String(flop),
-			},
-		},
-	}
-
-	result, err := svc.Query(input)
+	equities, err := db.BatchQueryDynamoDB(svc, "PloEquity", flop)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query DynamoDB: %v", err)
+		return nil, err
 	}
 
 	// Create FlopEquities instance
-	flopEquities := &FlopEquities{
+	flopEquities := &models.FlopEquities{
 		Flop:     flop,
-		Equities: make(map[string]float64),
-	}
-
-	// Unmarshal each item
-	for _, item := range result.Items {
-		var dbItem struct {
-			HandCombination string  `json:"HandCombination"`
-			Equity          float64 `json:"Equity"`
-		}
-		err = dynamodbattribute.UnmarshalMap(item, &dbItem)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal DynamoDB item: %v", err)
-		}
-		flopEquities.Equities[dbItem.HandCombination] = dbItem.Equity
+		Equities: equities,
 	}
 
 	return flopEquities, nil
@@ -108,94 +62,28 @@ func batchQueryDynamoDB(flop string) (*FlopEquities, error) {
 
 // insertDynamoDB inserts or updates an item in DynamoDB
 func insertDynamoDB(flop string, handCombination string, equity float64) error {
-	log.Printf("Attempting to insert data - Flop: %s, HandCombination: %s, Equity: %.2f", flop, handCombination, equity)
 	svc := getDynamoDBClient()
-	item := map[string]*dynamodb.AttributeValue{
-		"Flop": {
-			S: aws.String(flop),
-		},
-		"HandCombination": {
-			S: aws.String(handCombination),
-		},
-		"Equity": {
-			N: aws.String(fmt.Sprintf("%.2f", equity)),
-		},
-	}
-
-	input := &dynamodb.PutItemInput{
-		Item:      item,
-		TableName: aws.String("PloEquity"),
-	}
-
-	result, err := svc.PutItem(input)
-	if err != nil {
-		log.Printf("Error inserting data into DynamoDB: %v", err)
-		return fmt.Errorf("failed to insert data into DynamoDB: %v", err)
-	}
-	log.Printf("Successfully inserted data into DynamoDB: %v", result)
-	return nil
+	return db.InsertDynamoDB(svc, "PloEquity", flop, handCombination, equity)
 }
 
 // generateBoardString creates a string representation of the board cards
 func generateBoardString(board []poker.Card) string {
-	boardStr := ""
-	for _, card := range board {
-		boardStr += card.String()
-	}
-	return boardStr
+	return pkrlib.GenerateBoardString(board)
 }
 
 // generateHandCombination creates a unique combination key for the hands
 func generateHandCombination(heroHand string, villainHand string) string {
-	hands := []string{heroHand, villainHand}
-	sort.Strings(hands) // Sort alphabetically to ensure uniqueness
-	return fmt.Sprintf("%s_%s", hands[0], hands[1])
+	return pkrlib.GenerateHandCombination(heroHand, villainHand)
 }
 
 // hasCardDuplicates checks if there are any duplicate cards across all provided card arrays
 func hasCardDuplicates(cards ...[]poker.Card) bool {
-	seen := make(map[string]bool)
-	for _, hand := range cards {
-		for _, card := range hand {
-			cardStr := card.String()
-			if seen[cardStr] {
-				return true
-			}
-			seen[cardStr] = true
-		}
-	}
-	return false
+	return pkrlib.HasCardDuplicates(cards...)
 }
 
 // calculateHandVsHandEquity calculates the equity between two hands
 // Returns equity value and whether it was a cache hit
-func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card, flopEquities *FlopEquities) (float64, bool) {
-	// Check for duplicate cards
-	if hasCardDuplicates(yourHand, opponentHand, board) {
-		return -1, false // Return -1 to indicate invalid hand due to duplicate cards
-	}
-
-	// Generate the full deck
-	deck := poker.NewDeck()
-	fullDeck := deck.Draw(52) // Draw all 52 cards from the deck
-
-	usedCards := append(yourHand, opponentHand...)
-	usedCards = append(usedCards, board...)
-
-	remainingDeck := []poker.Card{}
-	for _, card := range fullDeck {
-		used := false
-		for _, usedCard := range usedCards {
-			if card == usedCard {
-				used = true
-				break
-			}
-		}
-		if !used {
-			remainingDeck = append(remainingDeck, card)
-		}
-	}
-
+func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card, flopEquities *models.FlopEquities) (float64, bool) {
 	// Convert hands to strings and concatenate
 	heroHandStr := ""
 	for _, card := range yourHand {
@@ -217,68 +105,20 @@ func calculateHandVsHandEquity(yourHand []poker.Card, opponentHand []poker.Card,
 	}
 
 	// Calculate equity since it wasn't found in DynamoDB
-	totalOutcomes := 0.0
-	winCount := 0.0
-
-	for i := 0; i < len(remainingDeck); i++ {
-		for j := i + 1; j < len(remainingDeck); j++ {
-			finalBoard := append(board, remainingDeck[i], remainingDeck[j])
-			winner := judgeWinner(yourHand, opponentHand, finalBoard)
-			if winner == "yourHand" {
-				winCount += 1
-			} else if winner == "tie" {
-				winCount += 0.5
-			}
-			totalOutcomes += 1
-		}
-	}
-
-	calculatedEquity := (winCount / totalOutcomes) * 100
-	return calculatedEquity, false
+	equity, _ := pkrlib.CalculateHandVsHandEquity(yourHand, opponentHand, board)
+	return equity, false
 }
 
 // judgeWinner determines the winner between two hands
 func judgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card) string {
-	// @doc: https://github.com/chehsunliu/poker/blob/72fcd0dd66288388735cc494db3f2bd11b28bfed/lookup.go#L12
-	var maxYourHandRank int32 = 7462
-	var maxOpponentHandRank int32 = 7462
-
-	// Generate all combinations of your hand and board
-	for i := 0; i < len(yourHand); i++ {
-		for j := i + 1; j < len(yourHand); j++ {
-			newBoard := append(board, yourHand[i], yourHand[j])
-			yourHandRank := poker.Evaluate(newBoard)
-			if yourHandRank < maxYourHandRank {
-				maxYourHandRank = yourHandRank
-			}
-		}
-	}
-
-	// Generate all combinations of opponent's hand and board
-	for i := 0; i < len(opponentHand); i++ {
-		for j := i + 1; j < len(opponentHand); j++ {
-			newBoard := append(board, opponentHand[i], opponentHand[j])
-			opponentHandRank := poker.Evaluate(newBoard)
-			if opponentHandRank < maxOpponentHandRank {
-				maxOpponentHandRank = opponentHandRank
-			}
-		}
-	}
-
-	if maxYourHandRank < maxOpponentHandRank {
-		return "yourHand"
-	} else if maxYourHandRank > maxOpponentHandRank {
-		return "opponentHand"
-	} else {
-		return "tie"
-	}
+	return pkrlib.JudgeWinner(yourHand, opponentHand, board)
 }
 
 // calculateHandVsRangeEquity は1つのハンドと複数のハンドのレンジに対してエクイティを計算
-func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.Card, board []poker.Card) []HandVsRangeResult {
+func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.Card, board []poker.Card) []models.HandVsRangeResult {
 	rand.Seed(time.Now().UnixNano()) // Seed the random number generator
 
-	var results []HandVsRangeResult
+	var results []models.HandVsRangeResult
 	var mu sync.Mutex // 結果スライスへのアクセスを保護するためのMutex
 	var wg sync.WaitGroup
 
@@ -288,7 +128,7 @@ func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.C
 	flopEquities, err := batchQueryDynamoDB(boardStr)
 	if err != nil {
 		log.Printf("Error fetching flop equities: %v", err)
-		flopEquities = &FlopEquities{
+		flopEquities = &models.FlopEquities{
 			Flop:     boardStr,
 			Equities: make(map[string]float64),
 		}
@@ -335,7 +175,7 @@ func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.C
 			equity, _ := calculateHandVsHandEquity(yourHand, currentOpponentHand, board, flopEquities)
 			if equity != -1 {
 				mu.Lock() // Mutexをロックしてresultsスライスを保護
-				results = append(results, HandVsRangeResult{
+				results = append(results, models.HandVsRangeResult{
 					OpponentHand: villainHandStr,
 					Equity:       equity,
 				})
@@ -372,69 +212,7 @@ func max(a, b int) int {
 
 // loadOpponentRangeFromPreset loads opponent range from CSV file based on preset name
 func loadOpponentRangeFromPreset(preset string) (string, error) {
-	var filePath string
-	baseDir := "data/six_handed_100bb_midrake"
-
-	// プリセット値に基づいてファイルパスを決定
-	switch preset {
-	case "SRP BB call vs UTG open":
-		filePath = fmt.Sprintf("%s/srp/bb_call_vs_utg.csv", baseDir)
-	case "SRP BB call vs BTN open":
-		filePath = fmt.Sprintf("%s/srp/bb_call_vs_btn.csv", baseDir)
-	case "SRP BTN call vs UTG open":
-		filePath = fmt.Sprintf("%s/srp/btn_call_vs_utg.csv", baseDir)
-	case "3BP UTG call vs BB 3bet":
-		filePath = fmt.Sprintf("%s/3bp/utg_call_vs_bb.csv", baseDir)
-	case "3BP UTG call vs BTN 3bet":
-		filePath = fmt.Sprintf("%s/3bp/utg_call_vs_btn.csv", baseDir)
-	case "3BP BTN call vs BB 3bet":
-		filePath = fmt.Sprintf("%s/3bp/btn_call_vs_bb.csv", baseDir)
-	default:
-		return "", fmt.Errorf("unknown preset: %s", preset)
-	}
-
-	log.Printf("Loading opponent range from file: %s", filePath)
-
-	// CSVファイルを読み込む
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		log.Printf("Error reading CSV file: %v", err)
-		// エラーが発生した場合はpanicを発生させる
-		return "", fmt.Errorf("failed to read CSV file: %v", err)
-	}
-
-	// CSVの内容をカンマ区切りの文字列に変換
-	lines := strings.Split(string(content), "\n")
-	log.Printf("CSV file content: %s", lines)
-
-	var hands []string
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		// CSVの各行からすべてのハンドを抽出
-		parts := strings.Split(line, ",")
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-
-			// @記号がある場合は、その前の部分だけを使用
-			handParts := strings.Split(part, "@")
-			hand := handParts[0]
-
-			if hand != "" {
-				hands = append(hands, hand)
-			}
-		}
-	}
-
-	// カンマ区切りの文字列に変換
-	return strings.Join(hands, ","), nil
+	return fileio.LoadOpponentRangeFromPreset(preset, "data")
 }
 
 // カードをソートするためのヘルパー関数

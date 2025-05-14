@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/chehsunliu/poker"
+
+	"equity-distribution-backend/pkg/models"
 )
 
 func BenchmarkHandleEquityCalculation(b *testing.B) {
@@ -196,7 +198,7 @@ func TestHandleHandVsRangeCalculation(t *testing.T) {
 
 			// 正常系の場合はレスポンスの形式を確認
 			if tc.expectedStatus == http.StatusOK {
-				var response []HandVsRangeResult
+				var response []models.HandVsRangeResult
 				err = json.Unmarshal(rr.Body.Bytes(), &response)
 				if err != nil {
 					t.Errorf("Could not parse response body: %v", err)
