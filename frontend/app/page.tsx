@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Bar } from "react-chartjs-2";
 import { Card } from "./components/Card";
+import Link from "next/link";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -223,9 +224,22 @@ export default function Home() {
   return (
     <div className="min-h-screen p-8">
       <main className="flex flex-col items-center gap-8 max-w-7xl mx-auto">
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
-          PLO Equity Distribution Graph
-        </h1>
+        <div className="w-full flex flex-col items-center mb-4">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent mb-4">
+            PLO Equity Distribution Graph
+          </h1>
+          <nav className="flex gap-4">
+            <Link href="/" className="text-blue-400 hover:text-blue-300">
+              ホーム
+            </Link>
+            <Link
+              href="/daily-quiz-results"
+              className="text-blue-400 hover:text-blue-300"
+            >
+              デイリークイズ結果
+            </Link>
+          </nav>
+        </div>
 
         <section className="card w-full max-w-2xl">
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
