@@ -6,10 +6,8 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"runtime"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -118,27 +116,15 @@ func judgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker
 func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.Card, board []poker.Card) []models.HandVsRangeResult {
 	rand.Seed(time.Now().UnixNano()) // Seed the random number generator
 
-	var results []models.HandVsRangeResult
-	var mu sync.Mutex // 結果スライスへのアクセスを保護するためのMutex
-	var wg sync.WaitGroup
-
 	boardStr := generateBoardString(board)
 
 	// DynamoDBからフロップに関連するエクイティを取得
-	flopEquities, err := batchQueryDynamoDB(boardStr)
+	_, err := batchQueryDynamoDB(boardStr)
 	if err != nil {
 		log.Printf("Error fetching flop equities: %v", err)
-		flopEquities = &models.FlopEquities{
-			Flop:     boardStr,
-			Equities: make(map[string]float64),
-		}
 	}
 
-	numCPU := runtime.NumCPU()
-	log.Printf("Using %d CPUs for parallel execution in calculateHandVsRangeEquity", numCPU)
-	semaphore := make(chan struct{}, numCPU) // 同時実行数をCPUコア数に制限
-
-	// Determine which opponent hands to process
+	// サンプリングロジック（必要に応じて）
 	handsToProcess := opponentHands
 	if len(opponentHands) > 10000 {
 		log.Printf("Sampling 10000 hands from %d opponent hands", len(opponentHands))
@@ -152,39 +138,21 @@ func calculateHandVsRangeEquity(yourHand []poker.Card, opponentHands [][]poker.C
 		log.Printf("Processing all %d opponent hands (less than or equal to 10000)", len(opponentHands))
 	}
 
-	// 各オポーネントハンドに対してエクイティを計算
-	for _, opponentHand := range handsToProcess { // Changed from opponentHands to handsToProcess
-		wg.Add(1)               // WaitGroupのカウンタをインクリメント
-		semaphore <- struct{}{} // セマフォを取得（空きができるまでブロック）
-
-		// opponentHandをゴルーチンの引数として渡すことで、ループ変数キャプチャの問題を避ける
-		go func(currentOpponentHand []poker.Card) {
-			defer wg.Done()                // ゴルーチン完了時にカウンタをデクリメント
-			defer func() { <-semaphore }() // セマフォを解放
-
-			heroHandStr := ""
-			for _, card := range yourHand {
-				heroHandStr += card.String()
-			}
-
-			villainHandStr := ""
-			for _, card := range currentOpponentHand {
-				villainHandStr += card.String()
-			}
-
-			equity, _ := calculateHandVsHandEquity(yourHand, currentOpponentHand, board, flopEquities)
-			if equity != -1 {
-				mu.Lock() // Mutexをロックしてresultsスライスを保護
-				results = append(results, models.HandVsRangeResult{
-					OpponentHand: villainHandStr,
-					Equity:       equity,
-				})
-				mu.Unlock() // Mutexをアンロック
-			}
-		}(opponentHand)
+	// 共通の並列計算関数を使用してequity計算を実行
+	equitiesMap, err := pkrlib.CalculateHandVsRangeEquityParallel(yourHand, handsToProcess, board)
+	if err != nil {
+		log.Printf("Error calculating equities: %v", err)
+		return []models.HandVsRangeResult{}
 	}
 
-	wg.Wait() // すべてのゴルーチンが完了するのを待つ
+	// 結果をHandVsRangeResultの形式に変換
+	var results []models.HandVsRangeResult
+	for villainHandStr, equity := range equitiesMap {
+		results = append(results, models.HandVsRangeResult{
+			OpponentHand: villainHandStr,
+			Equity:       equity,
+		})
+	}
 
 	// エクイティでソート
 	sort.Slice(results, func(i, j int) bool {

@@ -10,6 +10,8 @@ github.com/jmespath/go-jmespath/internal/testify v1.5.1 h1:shLQSRRSCCPj3f2gpwzGw
 github.com/jmespath/go-jmespath/internal/testify v1.5.1/go.mod h1:L3OGu8Wl2/fWfCI6z80xFu9LTZmf1ZRjMHUOPmWr69U=
 github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
 github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
+github.com/lib/pq v1.10.9 h1:YXG7RB+JIjhP29X+OtkiDnYaXQwpS4JEWq7dtCCRUEw=
+github.com/lib/pq v1.10.9/go.mod h1:AlVN5x4E4T544tWzH6hKfbfQvm3HdbOxrmggDNAPY9o=
 github.com/loganjspears/joker v0.0.0-20180219043703-3f2f69a75914 h1:yAIlIiOkdoJvqd5xtWzM9tNDpLZrFfJdpnNSKha78G8=
 github.com/loganjspears/joker v0.0.0-20180219043703-3f2f69a75914/go.mod h1:76SAnflG7ZFhgtnaVCpP6A5Z1S/VMFzRBN7KGm5j4oc=
 github.com/notnil/joker v0.0.0-20180219043703-3f2f69a75914 h1:xXPuFr3PVM4p6Vw3j0CP29oWYRVKO3cPZjR6D7BxggQ=

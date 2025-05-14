@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"math/rand"
 	"os"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chehsunliu/poker"
@@ -59,12 +62,26 @@ var scenarios = []Scenario{
 	},
 }
 
+// EquityResult は1つのシナリオの計算結果を表します
+type EquityResult struct {
+	Scenario      Scenario
+	HeroHand      string
+	Flop          []poker.Card
+	Equities      map[string]float64
+	AverageEquity float64 // 平均エクイティ
+}
+
 // バッチ処理の設定
 type BatchConfig struct {
-	DynamoDBEndpoint string // DynamoDBエンドポイント
-	DynamoDBRegion   string // DynamoDBリージョン
-	LogFile          string // ログファイル
-	DataDir          string // データディレクトリ
+	LogFile string // ログファイル
+	DataDir string // データディレクトリ
+
+	// PostgreSQL設定
+	PostgresHost     string // PostgreSQLホスト
+	PostgresPort     int    // PostgreSQLポート
+	PostgresUser     string // PostgreSQLユーザー
+	PostgresPassword string // PostgreSQLパスワード
+	PostgresDBName   string // PostgreSQLデータベース名
 }
 
 func main() {
@@ -80,36 +97,117 @@ func main() {
 	// ログの設定
 	setupLogging(config.LogFile)
 
-	log.Printf("Starting sequential processing for %d scenarios", len(scenarios))
-
 	// 乱数生成器の初期化
 	rand.Seed(time.Now().UnixNano())
 
-	// 直列で各シナリオを実行
+	// PostgreSQL接続の確立
+	pgConfig := db.PostgresConfig{
+		Host:     config.PostgresHost,
+		Port:     config.PostgresPort,
+		User:     config.PostgresUser,
+		Password: config.PostgresPassword,
+		DBName:   config.PostgresDBName,
+	}
+
+	pgDB, err := db.GetPostgresConnection(pgConfig)
+	if err != nil {
+		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
+	}
+	defer pgDB.Close()
+
+	// 並列処理の設定
+	numCPU := runtime.NumCPU()
+	log.Printf("Starting parallel processing for %d scenarios using %d CPUs", len(scenarios), numCPU)
+
+	// 同時実行数を制限するセマフォ
+	semaphore := make(chan struct{}, numCPU)
+	var wg sync.WaitGroup
+
+	// 結果を収集するためのチャネル
+	resultChan := make(chan EquityResult, len(scenarios))
+
+	// 各シナリオを並列で実行
 	for i, scenario := range scenarios {
-		log.Printf("Starting scenario %d: %s", i+1, scenario.Name)
-		log.Printf("Selected scenario: %s", scenario.Name)
+		wg.Add(1)
+		semaphore <- struct{}{} // セマフォを取得
 
-		// シナリオに基づいてハンドとフロップを生成
-		heroHand, opponentRange, flop := generateHandsAndFlop(scenario, config)
+		// シナリオ処理をgoroutineで実行
+		go func(index int, currentScenario Scenario) {
+			defer wg.Done()
+			defer func() { <-semaphore }() // セマフォを解放
 
-		// equity計算
-		equities, err := calculateEquity(heroHand, opponentRange, flop, config)
+			log.Printf("Starting scenario %d: %s", index+1, currentScenario.Name)
+			log.Printf("Selected scenario: %s", currentScenario.Name)
+
+			// シナリオに基づいてハンドとフロップを生成
+			heroHand, opponentRange, flop := generateHandsAndFlop(currentScenario, config)
+
+			// equity計算
+			equities, err := calculateEquity(heroHand, opponentRange, flop, config)
+			if err != nil {
+				log.Printf("Error calculating equity: %v", err)
+				log.Printf("Scenario %d failed: %v", index+1, err)
+				return
+			}
+
+			// 平均エクイティの計算
+			var totalEquity float64
+			for _, equity := range equities {
+				totalEquity += equity
+			}
+			averageEquity := totalEquity / float64(len(equities))
+
+			// 結果をチャネルに送信
+			resultChan <- EquityResult{
+				Scenario:      currentScenario,
+				HeroHand:      heroHand,
+				Flop:          flop,
+				Equities:      equities,
+				AverageEquity: averageEquity,
+			}
+
+			log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
+				index+1, currentScenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
+		}(i, scenario)
+	}
+
+	// すべてのgoroutineが完了するのを待つ
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// 結果を収集
+	var results []EquityResult
+	for result := range resultChan {
+		results = append(results, result)
+	}
+
+	// 翌日の日付を取得
+	tomorrow := time.Now().AddDate(0, 0, 1)
+
+	// 結果をPostgreSQLに保存
+	for _, result := range results {
+		// 結果をJSON形式に変換
+		resultJSON, err := json.Marshal(result.Equities)
 		if err != nil {
-			log.Printf("Error calculating equity: %v", err)
-			log.Printf("Scenario %d failed: %v", i+1, err)
+			log.Printf("Error marshaling equities to JSON: %v", err)
 			continue
 		}
 
-		// 結果をDynamoDBに保存
-		err = saveResultToDynamoDB(heroHand, opponentRange, flop, equities, config)
+		// PostgreSQLに保存
+		err = db.InsertDailyQuizResult(
+			pgDB,
+			tomorrow,
+			result.Scenario.Name,
+			result.HeroHand,
+			pkrlib.GenerateBoardString(result.Flop),
+			string(resultJSON),
+			result.AverageEquity,
+		)
 		if err != nil {
-			log.Printf("Error saving result to DynamoDB: %v", err)
-			log.Printf("Scenario %d failed: %v", i+1, err)
-			continue
+			log.Printf("Error saving result to PostgreSQL: %v", err)
 		}
-
-		log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s", i+1, scenario.Name, pkrlib.GenerateBoardString(flop), heroHand)
 	}
 
 	log.Println("All scenarios processed successfully")
@@ -119,10 +217,15 @@ func main() {
 func parseFlags() *BatchConfig {
 	config := &BatchConfig{}
 
-	flag.StringVar(&config.DynamoDBEndpoint, "endpoint", "http://localhost:4566", "DynamoDB endpoint URL")
-	flag.StringVar(&config.DynamoDBRegion, "region", "us-east-1", "AWS region")
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
 	flag.StringVar(&config.DataDir, "data", "data", "Directory containing preset data files")
+
+	// PostgreSQL設定
+	flag.StringVar(&config.PostgresHost, "pg-host", "localhost", "PostgreSQL host")
+	flag.IntVar(&config.PostgresPort, "pg-port", 5432, "PostgreSQL port")
+	flag.StringVar(&config.PostgresUser, "pg-user", "postgres", "PostgreSQL user")
+	flag.StringVar(&config.PostgresPassword, "pg-password", "postgres", "PostgreSQL password")
+	flag.StringVar(&config.PostgresDBName, "pg-dbname", "plo_equity", "PostgreSQL database name")
 
 	flag.Parse()
 
@@ -244,56 +347,6 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 		}
 	}
 
-	// 結果を格納するマップ
-	equities := make(map[string]float64)
-
-	// 各オポーネントハンドに対してequity計算
-	for _, opponentHand := range formattedOpponentHands {
-		// カード重複チェック
-		if pkrlib.HasCardDuplicates(yourHand, opponentHand, flop) {
-			continue
-		}
-
-		// ハンド文字列の生成
-		villainHandStr := ""
-		for _, card := range opponentHand {
-			villainHandStr += card.String()
-		}
-
-		// equity計算
-		equity, _ := pkrlib.CalculateHandVsHandEquity(yourHand, opponentHand, flop)
-		if equity != -1 {
-			equities[villainHandStr] = equity
-		}
-	}
-
-	if len(equities) == 0 {
-		return nil, fmt.Errorf("no valid equity calculations")
-	}
-
-	return equities, nil
-}
-
-// 結果をDynamoDBに保存する
-func saveResultToDynamoDB(heroHand string, opponentRange string, flop []poker.Card, equities map[string]float64, config *BatchConfig) error {
-	// フロップ文字列の生成
-	flopStr := pkrlib.GenerateBoardString(flop)
-
-	// DynamoDBクライアントを取得
-	dbConfig := db.Config{
-		Region:   config.DynamoDBRegion,
-		Endpoint: config.DynamoDBEndpoint,
-	}
-	svc := db.GetDynamoDBClient(dbConfig)
-
-	// 各equity結果をDynamoDBに保存
-	for villainHand, equity := range equities {
-		handCombination := pkrlib.GenerateHandCombination(heroHand, villainHand)
-		err := db.InsertDynamoDB(svc, "PloEquity", flopStr, handCombination, equity)
-		if err != nil {
-			return fmt.Errorf("failed to insert data into DynamoDB: %v", err)
-		}
-	}
-
-	return nil
+	// 共通の並列計算関数を使用してequity計算を実行
+	return pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
 }
