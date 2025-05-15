@@ -31,32 +31,32 @@ type Scenario struct {
 // 利用可能なシナリオのリスト
 var scenarios = []Scenario{
 	{
-		Name:        "SRP BB vs UTG",
+		Name:        "SRP UTG vs BB",
 		PresetName:  "SRP BB call vs UTG open",
 		Description: "シングルレイズポット: BBがUTGオープンに対してコール",
 	},
 	{
-		Name:        "SRP BB vs BTN",
+		Name:        "SRP BTN vs BB",
 		PresetName:  "SRP BB call vs BTN open",
 		Description: "シングルレイズポット: BBがBTNオープンに対してコール",
 	},
 	{
-		Name:        "SRP BTN vs UTG",
+		Name:        "SRP UTG vs BTN",
 		PresetName:  "SRP BTN call vs UTG open",
 		Description: "シングルレイズポット: BTNがUTGオープンに対してコール",
 	},
 	{
-		Name:        "3BP UTG vs BB",
+		Name:        "3BP BB vs UTG",
 		PresetName:  "3BP UTG call vs BB 3bet",
 		Description: "3ベットポット: UTGがBBの3ベットに対してコール",
 	},
 	{
-		Name:        "3BP UTG vs BTN",
+		Name:        "3BP BTN vs UTG",
 		PresetName:  "3BP UTG call vs BTN 3bet",
 		Description: "3ベットポット: UTGがBTNの3ベットに対してコール",
 	},
 	{
-		Name:        "3BP BTN vs BB",
+		Name:        "3BP BB vs BTN",
 		PresetName:  "3BP BTN call vs BB 3bet",
 		Description: "3ベットポット: BTNがBBの3ベットに対してコール",
 	},
