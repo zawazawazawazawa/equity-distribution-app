@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { Bar } from "react-chartjs-2";
 import Link from "next/link";
+import { Card } from "../components/Card";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -310,9 +311,18 @@ export default function DailyQuiz() {
                   </div>
                   <div>
                     <p className="font-semibold">Hero:</p>
-                    <p className="text-xl">
-                      {formatHandString(result.hero_hand)}
-                    </p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {formatHandString(result.hero_hand)
+                        .split(" ")
+                        .map((card, index) => (
+                          <Card
+                            key={index}
+                            value={card}
+                            isSelected={false}
+                            onClick={() => {}}
+                          />
+                        ))}
+                    </div>
                   </div>
                 </div>
               </div>
