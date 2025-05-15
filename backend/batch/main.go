@@ -84,6 +84,10 @@ type BatchConfig struct {
 	PostgresUser     string // PostgreSQLユーザー
 	PostgresPassword string // PostgreSQLパスワード
 	PostgresDBName   string // PostgreSQLデータベース名
+
+	// 並列処理の設定
+	EnableParallelProcessing bool // 並列処理の有効/無効
+	MaxParallelJobs          int  // 最大同時実行数
 }
 
 func main() {
@@ -118,38 +122,93 @@ func main() {
 	defer pgDB.Close()
 
 	// 並列処理の設定
-	numCPU := runtime.NumCPU()
-	log.Printf("Starting parallel processing for %d scenarios using %d CPUs", len(scenarios), numCPU)
+	var results []EquityResult
 
-	// 同時実行数を制限するセマフォ
-	semaphore := make(chan struct{}, numCPU)
-	var wg sync.WaitGroup
+	if config.EnableParallelProcessing {
+		// 並列処理が有効な場合
+		maxJobs := config.MaxParallelJobs
+		log.Printf("Starting parallel processing for %d scenarios using %d jobs", len(scenarios), maxJobs)
 
-	// 結果を収集するためのチャネル
-	resultChan := make(chan EquityResult, len(scenarios))
+		// 同時実行数を制限するセマフォ
+		semaphore := make(chan struct{}, maxJobs)
+		var wg sync.WaitGroup
 
-	// 各シナリオを並列で実行
-	for i, scenario := range scenarios {
-		wg.Add(1)
-		semaphore <- struct{}{} // セマフォを取得
+		// 結果を収集するためのチャネル
+		resultChan := make(chan EquityResult, len(scenarios))
 
-		// シナリオ処理をgoroutineで実行
-		go func(index int, currentScenario Scenario) {
-			defer wg.Done()
-			defer func() { <-semaphore }() // セマフォを解放
+		// 各シナリオを並列で実行
+		for i, scenario := range scenarios {
+			wg.Add(1)
+			semaphore <- struct{}{} // セマフォを取得
 
-			log.Printf("Starting scenario %d: %s", index+1, currentScenario.Name)
-			log.Printf("Selected scenario: %s", currentScenario.Name)
+			// シナリオ処理をgoroutineで実行
+			go func(index int, currentScenario Scenario) {
+				defer wg.Done()
+				defer func() { <-semaphore }() // セマフォを解放
+
+				log.Printf("Starting scenario %d: %s", index+1, currentScenario.Name)
+				log.Printf("Selected scenario: %s", currentScenario.Name)
+
+				// シナリオに基づいてハンドとフロップを生成
+				heroHand, opponentRange, flop := generateHandsAndFlop(currentScenario, config)
+
+				// equity計算
+				equities, err := calculateEquity(heroHand, opponentRange, flop, config)
+				if err != nil {
+					log.Printf("Error calculating equity: %v", err)
+					log.Printf("Scenario %d failed: %v", index+1, err)
+					return
+				}
+
+				// 平均エクイティの計算
+				var totalEquity float64
+				for _, equity := range equities {
+					totalEquity += equity
+				}
+				averageEquity := totalEquity / float64(len(equities))
+
+				// 結果をチャネルに送信
+				resultChan <- EquityResult{
+					Scenario:      currentScenario,
+					HeroHand:      heroHand,
+					Flop:          flop,
+					Equities:      equities,
+					AverageEquity: averageEquity,
+				}
+
+				log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
+					index+1, currentScenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
+			}(i, scenario)
+		}
+
+		// すべてのgoroutineが完了するのを待つ
+		go func() {
+			wg.Wait()
+			close(resultChan)
+		}()
+
+		// 結果を収集
+		for result := range resultChan {
+			results = append(results, result)
+		}
+	} else {
+		// 並列処理が無効な場合（シーケンシャル処理）
+		log.Printf("Starting sequential processing for %d scenarios", len(scenarios))
+
+		// 各シナリオを順次実行
+		for i, scenario := range scenarios {
+			log.Printf("Starting scenario %d: %s", i+1, scenario.Name)
+			log.Printf("Selected scenario: %s", scenario.Name)
 
 			// シナリオに基づいてハンドとフロップを生成
-			heroHand, opponentRange, flop := generateHandsAndFlop(currentScenario, config)
+			heroHand, opponentRange, flop := generateHandsAndFlop(scenario, config)
 
 			// equity計算
 			equities, err := calculateEquity(heroHand, opponentRange, flop, config)
 			if err != nil {
 				log.Printf("Error calculating equity: %v", err)
-				log.Printf("Scenario %d failed: %v", index+1, err)
-				return
+				log.Printf("Scenario %d failed: %v", i+1, err)
+				continue
 			}
 
 			// 平均エクイティの計算
@@ -159,30 +218,18 @@ func main() {
 			}
 			averageEquity := totalEquity / float64(len(equities))
 
-			// 結果をチャネルに送信
-			resultChan <- EquityResult{
-				Scenario:      currentScenario,
+			// 結果を追加
+			results = append(results, EquityResult{
+				Scenario:      scenario,
 				HeroHand:      heroHand,
 				Flop:          flop,
 				Equities:      equities,
 				AverageEquity: averageEquity,
-			}
+			})
 
 			log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
-				index+1, currentScenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
-		}(i, scenario)
-	}
-
-	// すべてのgoroutineが完了するのを待つ
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	// 結果を収集
-	var results []EquityResult
-	for result := range resultChan {
-		results = append(results, result)
+				i+1, scenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
+		}
 	}
 
 	// 日付の処理
@@ -285,6 +332,10 @@ func parseFlags() *BatchConfig {
 	postgresPassword := getEnvOrDefault("POSTGRES_PASSWORD", "postgres")
 	postgresDBName := getEnvOrDefault("POSTGRES_DBNAME", "plo_equity")
 
+	// 並列処理の設定を環境変数から取得
+	enableParallelProcessing := getEnvBoolOrDefault("ENABLE_PARALLEL_PROCESSING", true)
+	maxParallelJobs := getEnvIntOrDefault("MAX_PARALLEL_JOBS", runtime.NumCPU())
+
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
 	flag.StringVar(&config.DataDir, "data", "data", "Directory containing preset data files")
 	flag.StringVar(&config.Date, "date", "", "Date for quiz in YYYY-MM-DD format (default: tomorrow)")
@@ -295,6 +346,10 @@ func parseFlags() *BatchConfig {
 	flag.StringVar(&config.PostgresUser, "pg-user", postgresUser, "PostgreSQL user")
 	flag.StringVar(&config.PostgresPassword, "pg-password", postgresPassword, "PostgreSQL password")
 	flag.StringVar(&config.PostgresDBName, "pg-dbname", postgresDBName, "PostgreSQL database name")
+
+	// 並列処理の設定
+	flag.BoolVar(&config.EnableParallelProcessing, "parallel", enableParallelProcessing, "Enable parallel processing")
+	flag.IntVar(&config.MaxParallelJobs, "jobs", maxParallelJobs, "Maximum number of parallel jobs")
 
 	flag.Parse()
 
@@ -314,6 +369,16 @@ func getEnvIntOrDefault(key string, defaultValue int) int {
 	if value, exists := os.LookupEnv(key); exists {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
+		}
+	}
+	return defaultValue
+}
+
+// 環境変数からブール値を取得するヘルパー関数
+func getEnvBoolOrDefault(key string, defaultValue bool) bool {
+	if value, exists := os.LookupEnv(key); exists {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
 		}
 	}
 	return defaultValue
@@ -434,6 +499,14 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 		}
 	}
 
-	// 共通の並列計算関数を使用してequity計算を実行
-	return pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+	// 並列処理の設定に応じてequity計算を実行
+	if config.EnableParallelProcessing {
+		// 並列処理が有効な場合は並列計算関数を使用
+		return pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+	} else {
+		// 並列処理が無効な場合は非並列計算関数を使用
+		// 注: pkrlib.CalculateHandVsRangeEquityという非並列版の関数が存在しない場合は、
+		// 並列版の関数を使用します
+		return pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+	}
 }
