@@ -90,10 +90,6 @@ echo "バッチ処理を開始します..."
 echo "データディレクトリ: $DATA_DIR"
 echo "開始日付: $START_DATE"
 echo "処理日数: $DAYS_COUNT 日間"
-echo "PostgreSQLホスト: $POSTGRES_HOST"
-echo "PostgreSQLポート: $POSTGRES_PORT"
-echo "PostgreSQLユーザー: $POSTGRES_USER"
-echo "PostgreSQLデータベース名: $POSTGRES_DBNAME"
 if [ -n "$LOG_FILE" ]; then
   echo "ログファイル: $LOG_FILE"
 else
