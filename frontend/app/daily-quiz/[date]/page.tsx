@@ -314,12 +314,41 @@ export default function DailyQuiz() {
     return results.filter((result) => result === true).length;
   };
 
+  // 誤差の合計を計算
+  const calculateTotalError = () => {
+    let totalError = 0;
+    quizResults.forEach((result, index) => {
+      if (showResults[index]) {
+        const userAnswer = userAnswers[index];
+        const correctAnswer = result.average_equity;
+        totalError += Math.abs(userAnswer - correctAnswer);
+      }
+    });
+    return totalError.toFixed(2); // 小数点以下2桁まで表示
+  };
+
   // scenarioからaggressorのpositionを抽出する関数
   const extractPosition = (scenario: string): string => {
     // ポジションを表す一般的な略語（UTG, MP, CO, BTN, SB, BB）を検索
     const positionRegex = /\b(UTG|MP|CO|BTN|SB|BB)\b/i;
     const match = scenario.match(positionRegex);
     return match ? match[0].toUpperCase() : "不明";
+  };
+
+  // Xでシェアする関数
+  const shareToX = () => {
+    // シェアするテキストを生成
+    const shareText = `Daily PLO Equity Quiz (${dateParam}) の結果: ${
+      quizResults.length
+    }問中${countCorrectAnswers()}問正解！ 正解との誤差の合計: ${calculateTotalError()} point #PLOQuiz`;
+
+    // X Web Intent URLを生成
+    const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
+      shareText
+    )}`;
+
+    // 新しいウィンドウでXシェアURLを開く
+    window.open(shareUrl, "_blank", "width=550,height=420");
   };
 
   return (
@@ -509,6 +538,25 @@ export default function DailyQuiz() {
                     あなたは{quizResults.length}問中{countCorrectAnswers()}
                     問正解でした！
                   </p>
+                  <p className="text-lg text-gray-300 mt-2">
+                    正解との誤差の合計: {calculateTotalError()} point
+                  </p>
+
+                  <button
+                    onClick={() => shareToX()}
+                    className="mt-6 flex items-center justify-center gap-2 bg-black hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-lg w-full max-w-xs mx-auto"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="white"
+                    >
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    </svg>
+                    Xに結果をシェア
+                  </button>
                 </div>
               </section>
             )}
