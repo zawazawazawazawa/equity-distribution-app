@@ -30,16 +30,16 @@ generate_date() {
   fi
 }
 
-# デフォルト値
+# デフォルト値（環境変数から取得、設定されていない場合はデフォルト値を使用）
 LOG_FILE=""
 DATA_DIR="data"
 DATE=""
 DAYS_COUNT=7  # デフォルトは7日間
-POSTGRES_HOST="localhost"
-POSTGRES_PORT=5432
-POSTGRES_USER="postgres"
-POSTGRES_PASSWORD="postgres"
-POSTGRES_DBNAME="plo_equity"
+POSTGRES_HOST=${POSTGRES_HOST:-"localhost"}
+POSTGRES_PORT=${POSTGRES_PORT:-5432}
+POSTGRES_USER=${POSTGRES_USER:-"postgres"}
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-"postgres"}
+POSTGRES_DBNAME=${POSTGRES_DBNAME:-"plo_equity"}
 
 # コマンドライン引数の解析
 while getopts "l:d:D:N:H:p:u:P:n:h" opt; do

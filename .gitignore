@@ -54,3 +54,5 @@ Thumbs.db
 # DynamoDB data files
 export.json
 import-items.json
+
+.envrc

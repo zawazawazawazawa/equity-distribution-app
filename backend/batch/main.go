@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -277,20 +278,45 @@ func main() {
 func parseFlags() *BatchConfig {
 	config := &BatchConfig{}
 
+	// 環境変数からデフォルト値を取得
+	postgresHost := getEnvOrDefault("POSTGRES_HOST", "localhost")
+	postgresPort := getEnvIntOrDefault("POSTGRES_PORT", 5432)
+	postgresUser := getEnvOrDefault("POSTGRES_USER", "postgres")
+	postgresPassword := getEnvOrDefault("POSTGRES_PASSWORD", "postgres")
+	postgresDBName := getEnvOrDefault("POSTGRES_DBNAME", "plo_equity")
+
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
 	flag.StringVar(&config.DataDir, "data", "data", "Directory containing preset data files")
 	flag.StringVar(&config.Date, "date", "", "Date for quiz in YYYY-MM-DD format (default: tomorrow)")
 
-	// PostgreSQL設定
-	flag.StringVar(&config.PostgresHost, "pg-host", "localhost", "PostgreSQL host")
-	flag.IntVar(&config.PostgresPort, "pg-port", 5432, "PostgreSQL port")
-	flag.StringVar(&config.PostgresUser, "pg-user", "postgres", "PostgreSQL user")
-	flag.StringVar(&config.PostgresPassword, "pg-password", "postgres", "PostgreSQL password")
-	flag.StringVar(&config.PostgresDBName, "pg-dbname", "plo_equity", "PostgreSQL database name")
+	// PostgreSQL設定（環境変数のデフォルト値を使用）
+	flag.StringVar(&config.PostgresHost, "pg-host", postgresHost, "PostgreSQL host")
+	flag.IntVar(&config.PostgresPort, "pg-port", postgresPort, "PostgreSQL port")
+	flag.StringVar(&config.PostgresUser, "pg-user", postgresUser, "PostgreSQL user")
+	flag.StringVar(&config.PostgresPassword, "pg-password", postgresPassword, "PostgreSQL password")
+	flag.StringVar(&config.PostgresDBName, "pg-dbname", postgresDBName, "PostgreSQL database name")
 
 	flag.Parse()
 
 	return config
+}
+
+// 環境変数から文字列値を取得するヘルパー関数
+func getEnvOrDefault(key, defaultValue string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return defaultValue
+}
+
+// 環境変数から整数値を取得するヘルパー関数
+func getEnvIntOrDefault(key string, defaultValue int) int {
+	if value, exists := os.LookupEnv(key); exists {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
 }
 
 // ログの設定
