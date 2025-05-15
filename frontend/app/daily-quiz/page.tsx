@@ -254,6 +254,24 @@ export default function DailyQuiz() {
     setUserAnswers(newAnswers);
   };
 
+  // 全問題に回答したかどうかを確認
+  const allQuestionsAnswered = () => {
+    return showResults.length > 0 && showResults.every((show) => show === true);
+  };
+
+  // 正解数を計算
+  const countCorrectAnswers = () => {
+    return results.filter((result) => result === true).length;
+  };
+
+  // scenarioからaggressorのpositionを抽出する関数
+  const extractPosition = (scenario: string): string => {
+    // ポジションを表す一般的な略語（UTG, MP, CO, BTN, SB, BB）を検索
+    const positionRegex = /\b(UTG|MP|CO|BTN|SB|BB)\b/i;
+    const match = scenario.match(positionRegex);
+    return match ? match[0].toUpperCase() : "不明";
+  };
+
   return (
     <div className="min-h-screen p-8">
       <main className="flex flex-col items-center gap-8 max-w-7xl mx-auto">
@@ -289,115 +307,163 @@ export default function DailyQuiz() {
             </p>
           </div>
         ) : (
-          quizResults.map((result, index) => (
-            <section key={result.id} className="card w-full max-w-2xl">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-semibold text-blue-400">
-                  問題 {index + 1}: {result.scenario}
-                </h2>
-              </div>
+          <>
+            <p className="text-gray-300 mb-4 w-full max-w-2xl">
+              以下のシチュエーションで、heroのEquityはいくつでしょう？
+              <br />
+              誤差±5%の範囲まで正解とします。
+              <br />
+              相手レンジは
+              <Link
+                href={"https://plogenius.com/"}
+                target="_blank"
+                className="text-blue-400 hover:text-blue-300"
+              >
+                PLO genius
+              </Link>
+              の6handed 100bb midrake Pot size open /
+              3betのrangeを使用しています。
+            </p>
 
-              <div className="mb-6">
-                <p className="text-gray-300 mb-4">
-                  以下のシチュエーションで、heroのEquityはいくつでしょう？
-                  <br />
-                  誤差±5%の範囲まで正解とする
-                </p>
+            <p className="text-gray-300 mb-4 w-full max-w-2xl"></p>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-300">
-                  <div>
-                    <p className="font-semibold">Situation:</p>
-                    <p className="text-xl">{result.scenario}</p>
-                  </div>
-                  <div>
-                    <p className="font-semibold">Hero:</p>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {formatHandString(result.hero_hand)
-                        .split(" ")
-                        .map((card, index) => (
-                          <Card
-                            key={index}
-                            value={card}
-                            isSelected={false}
-                            onClick={() => {}}
-                          />
-                        ))}
+            {quizResults.map((result, index) => (
+              <section key={result.id} className="card w-full max-w-2xl">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-semibold text-blue-400">
+                    問題 {index + 1}: {result.scenario}
+                  </h2>
+                </div>
+
+                <div className="mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-300">
+                    <div>
+                      <p className="font-semibold">Situation:</p>
+                      <p className="text-xl">{result.scenario}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold">Hero:</p>
+                      <p className="text-sm mb-1">
+                        Position: {extractPosition(result.scenario)}
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {formatHandString(result.hero_hand)
+                          .split(" ")
+                          .map((card, index) => (
+                            <Card
+                              key={index}
+                              value={card}
+                              isSelected={false}
+                              onClick={() => {}}
+                            />
+                          ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="font-semibold">Flop:</p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {formatHandString(result.flop)
+                          .split(" ")
+                          .map((card, index) => (
+                            <Card
+                              key={index}
+                              value={card}
+                              isSelected={false}
+                              onClick={() => {}}
+                            />
+                          ))}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="mb-6">
-                <label
-                  htmlFor={`equity-slider-${index}`}
-                  className="block text-gray-300 mb-2"
-                >
-                  あなたの回答: {userAnswers[index]}%
-                </label>
-                <input
-                  id={`equity-slider-${index}`}
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={userAnswers[index]}
-                  onChange={(e) =>
-                    handleSliderChange(index, parseInt(e.target.value))
-                  }
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                  disabled={showResults[index]}
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>0%</span>
-                  <span>25%</span>
-                  <span>50%</span>
-                  <span>75%</span>
-                  <span>100%</span>
-                </div>
-              </div>
-
-              {!showResults[index] ? (
-                <button
-                  onClick={() => handleSubmit(index)}
-                  className="btn-primary w-full"
-                >
-                  解答する
-                </button>
-              ) : (
-                <div className="mt-4">
-                  <div
-                    className={`p-4 rounded-lg mb-4 ${
-                      results[index]
-                        ? "bg-green-900/30 text-green-400"
-                        : "bg-red-900/30 text-red-400"
-                    }`}
+                <div className="mb-6">
+                  <label
+                    htmlFor={`equity-slider-${index}`}
+                    className="block text-gray-300 mb-2"
                   >
-                    <p className="font-bold text-lg">
-                      {results[index] ? "正解！" : "不正解"}
-                    </p>
-                    <p>
-                      あなたの回答: {userAnswers[index]}%<br />
-                      正解: {result.average_equity.toFixed(2)}%
-                    </p>
+                    あなたの回答: {userAnswers[index]}%
+                  </label>
+                  <input
+                    id={`equity-slider-${index}`}
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={userAnswers[index]}
+                    onChange={(e) =>
+                      handleSliderChange(index, parseInt(e.target.value))
+                    }
+                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    disabled={showResults[index]}
+                  />
+                  <div className="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>0%</span>
+                    <span>25%</span>
+                    <span>50%</span>
+                    <span>75%</span>
+                    <span>100%</span>
                   </div>
-
-                  {result.result && Array.isArray(result.result) && (
-                    <div style={{ height: "400px" }}>
-                      <Bar
-                        data={
-                          prepareChartData(result) || {
-                            labels: [],
-                            datasets: [],
-                          }
-                        }
-                        options={options}
-                      />
-                    </div>
-                  )}
                 </div>
-              )}
-            </section>
-          ))
+
+                {!showResults[index] ? (
+                  <button
+                    onClick={() => handleSubmit(index)}
+                    className="btn-primary w-full"
+                  >
+                    解答する
+                  </button>
+                ) : (
+                  <div className="mt-4">
+                    <div
+                      className={`p-4 rounded-lg mb-4 ${
+                        results[index]
+                          ? "bg-green-900/30 text-green-400"
+                          : "bg-red-900/30 text-red-400"
+                      }`}
+                    >
+                      <p className="font-bold text-lg">
+                        {results[index] ? "正解！" : "不正解"}
+                      </p>
+                      <p>
+                        あなたの回答: {userAnswers[index]}%<br />
+                        正解: {result.average_equity.toFixed(2)}%
+                      </p>
+                    </div>
+
+                    {result.result && Array.isArray(result.result) && (
+                      <div style={{ height: "400px" }}>
+                        <Bar
+                          data={
+                            prepareChartData(result) || {
+                              labels: [],
+                              datasets: [],
+                            }
+                          }
+                          options={options}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            ))}
+
+            {/* 全問題回答後の結果表示 */}
+            {allQuestionsAnswered() && (
+              <section className="card w-full max-w-2xl mt-8">
+                <div className="p-6 bg-blue-900/30 rounded-lg text-center">
+                  <h2 className="text-2xl font-bold text-blue-400 mb-4">
+                    クイズ結果
+                  </h2>
+                  <p className="text-xl text-gray-300">
+                    あなたは{quizResults.length}問中{countCorrectAnswers()}
+                    問正解でした！
+                  </p>
+                </div>
+              </section>
+            )}
+          </>
         )}
       </main>
     </div>
