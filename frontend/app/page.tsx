@@ -233,10 +233,10 @@ export default function Home() {
               ホーム
             </Link>
             <Link
-              href="/daily-quiz"
+              href="/daily-quiz/back-number"
               className="text-blue-400 hover:text-blue-300"
             >
-              Daily Quiz
+              Back Number
             </Link>
           </nav>
         </div>
