@@ -53,3 +53,30 @@ aws --endpoint-url=http://localhost:4566 dynamodb batch-write-item \
 
 - `export.json`と`import-items.json`は Git 管理対象外です
 - データ形式のサンプルは`export.json.example`を参照してください
+
+```bash
+# テーブル一覧の確認
+aws dynamodb list-tables --endpoint-url http://localhost:4566 --region us-east-1
+
+# テーブルの中身の確認
+aws dynamodb describe-table --table-name PloEquity --endpoint-url http://localhost:4566 --region us-east-1
+aws dynamodb scan --table-name PloEquity --endpoint-url http://localhost:4566 --region us-east-1
+```
+
+- dynamodb のテーブルデータのエクスポート方法
+
+  ```bash
+  # JSON形式でエクスポート
+  aws dynamodb scan \
+    --table-name PloEquity \
+    --endpoint-url http://localhost:4566 \
+    --region us-east-1 \
+    --output json > export.json
+
+  # テキスト形式でエクスポート
+  aws dynamodb scan \
+    --table-name PloEquity \
+    --endpoint-url http://localhost:4566 \
+    --region us-east-1 \
+    --output text > export.txt
+  ```
