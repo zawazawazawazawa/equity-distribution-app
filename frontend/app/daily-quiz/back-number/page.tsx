@@ -27,11 +27,11 @@ export default function BackNumber() {
       <main className="flex flex-col items-center gap-8 max-w-7xl mx-auto">
         <div className="w-full flex flex-col items-center mb-4">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent mb-4">
-            Daily Quiz バックナンバー
+            Daily Quiz Back Number
           </h1>
           <nav className="flex gap-4">
             <Link href="/" className="text-blue-400 hover:text-blue-300">
-              ホーム
+              Home
             </Link>
             <Link
               href="/daily-quiz/back-number"

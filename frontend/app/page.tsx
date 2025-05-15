@@ -229,14 +229,11 @@ export default function Home() {
             PLO Equity Distribution Graph
           </h1>
           <nav className="flex gap-4">
-            <Link href="/" className="text-blue-400 hover:text-blue-300">
-              ホーム
-            </Link>
             <Link
-              href="/daily-quiz/back-number"
+              href={`/daily-quiz/${new Date().toISOString().split('T')[0]}`}
               className="text-blue-400 hover:text-blue-300"
             >
-              Back Number
+              Today&apos;s Quiz
             </Link>
           </nav>
         </div>

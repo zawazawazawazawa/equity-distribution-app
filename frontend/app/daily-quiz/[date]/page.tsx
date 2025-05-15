@@ -331,7 +331,7 @@ export default function DailyQuiz() {
           </h1>
           <nav className="flex gap-4">
             <Link href="/" className="text-blue-400 hover:text-blue-300">
-              ホーム
+              Home
             </Link>
             <Link
               href="/daily-quiz/back-number"
@@ -381,7 +381,7 @@ export default function DailyQuiz() {
               <section key={result.id} className="card w-full max-w-2xl">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-semibold text-blue-400">
-                    問題 {index + 1}: {result.scenario}
+                    問題 {index + 1}
                   </h2>
                 </div>
 
@@ -392,9 +392,8 @@ export default function DailyQuiz() {
                       <p className="text-xl">{result.scenario}</p>
                     </div>
                     <div>
-                      <p className="font-semibold">Hero:</p>
-                      <p className="text-sm mb-1">
-                        Position: {extractPosition(result.scenario)}
+                      <p className="font-semibold">
+                        Hero: {extractPosition(result.scenario)}
                       </p>
                       <div className="flex flex-wrap gap-2 mt-2">
                         {formatHandString(result.hero_hand)
