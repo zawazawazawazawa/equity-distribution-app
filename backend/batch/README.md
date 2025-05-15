@@ -22,12 +22,14 @@
 
 ### オプション
 
-- `-n <数値>` : 計算回数 (デフォルト: 100)
-- `-w <数値>` : ワーカー数 (デフォルト: CPU コア数)
-- `-e <URL>` : DynamoDB エンドポイント (デフォルト: http://localhost:4566)
-- `-r <リージョン>` : AWS リージョン (デフォルト: us-east-1)
 - `-l <ファイル>` : ログファイル (デフォルト: stdout)
 - `-d <ディレクトリ>` : データディレクトリ (デフォルト: data)
+- `-D <YYYY-MM-DD>` : クイズの日付 (デフォルト: 明日)
+- `-H <ホスト>` : PostgreSQL ホスト (デフォルト: localhost)
+- `-p <ポート>` : PostgreSQL ポート (デフォルト: 5432)
+- `-u <ユーザー>` : PostgreSQL ユーザー (デフォルト: postgres)
+- `-P <パスワード>` : PostgreSQL パスワード (デフォルト: postgres)
+- `-n <DB名>` : PostgreSQL データベース名 (デフォルト: plo_equity)
 - `-h` : ヘルプを表示
 
 ### 使用例
@@ -36,11 +38,11 @@
 # デフォルト設定で実行
 ./scripts/run-batch.sh
 
-# 1000回の計算を8ワーカーで実行し、ログをファイルに出力
-./scripts/run-batch.sh -n 1000 -w 8 -l logs/batch.log
+# 特定の日付のクイズを生成し、ログをファイルに出力
+./scripts/run-batch.sh -D 2025-05-20 -l logs/batch.log
 
-# カスタムDynamoDBエンドポイントを指定
-./scripts/run-batch.sh -e http://dynamodb.example.com:8000
+# カスタムPostgreSQLサーバーを指定
+./scripts/run-batch.sh -H db.example.com -p 5433 -u myuser -P mypassword -n mydb
 ```
 
 ## 定期実行の設定
@@ -67,18 +69,19 @@
 
 ## トラブルシューティング
 
-### DynamoDB に接続できない
+### PostgreSQL に接続できない
 
 エラーメッセージ：
 
 ```
-エラー: DynamoDBに接続できません。docker-compose upを実行してDynamoDBを起動してください。
+エラー: PostgreSQLに接続できません。
 ```
 
 解決策：
 
-1. `docker-compose up -d`コマンドを実行して DynamoDB を起動
-2. DynamoDB が起動していることを確認：`docker-compose ps`
+1. `docker-compose up -d`コマンドを実行して PostgreSQL を起動
+2. PostgreSQL が起動していることを確認：`docker-compose ps`
+3. PostgreSQL の接続情報が正しいか確認：`-H`, `-p`, `-u`, `-P`, `-n` オプション
 
 ### 権限エラー
 

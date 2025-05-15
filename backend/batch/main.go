@@ -75,6 +75,7 @@ type EquityResult struct {
 type BatchConfig struct {
 	LogFile string // ログファイル
 	DataDir string // データディレクトリ
+	Date    string // 日付（YYYY-MM-DD形式）
 
 	// PostgreSQL設定
 	PostgresHost     string // PostgreSQLホスト
@@ -183,8 +184,19 @@ func main() {
 		results = append(results, result)
 	}
 
-	// 翌日の日付を取得
-	tomorrow := time.Now().AddDate(0, 0, 1)
+	// 日付の処理
+	var targetDate time.Time
+	if config.Date == "" {
+		// 日付が指定されていない場合は翌日の日付を使用
+		targetDate = time.Now().AddDate(0, 0, 1)
+	} else {
+		// 指定された日付を解析
+		var err error
+		targetDate, err = time.Parse("2006-01-02", config.Date)
+		if err != nil {
+			log.Fatalf("Invalid date format: %v. Please use YYYY-MM-DD format.", err)
+		}
+	}
 
 	// 結果をシナリオごとにグループ化
 	scenarioResults := make(map[string][]EquityResult)
@@ -244,7 +256,7 @@ func main() {
 		// シナリオごとに一つのレコードとしてPostgreSQLに保存
 		err = db.InsertDailyQuizResult(
 			pgDB,
-			tomorrow,
+			targetDate,
 			scenarioName,
 			heroHand,
 			flop,
@@ -267,6 +279,7 @@ func parseFlags() *BatchConfig {
 
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
 	flag.StringVar(&config.DataDir, "data", "data", "Directory containing preset data files")
+	flag.StringVar(&config.Date, "date", "", "Date for quiz in YYYY-MM-DD format (default: tomorrow)")
 
 	// PostgreSQL設定
 	flag.StringVar(&config.PostgresHost, "pg-host", "localhost", "PostgreSQL host")
