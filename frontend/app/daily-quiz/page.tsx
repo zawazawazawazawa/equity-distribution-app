@@ -28,7 +28,7 @@ ChartJS.register(
 
 // APIから返されるデータの型定義
 type HandVsRangeResult = {
-  opponentHand: string;
+  villain_hand: string;
   equity: number;
 };
 
@@ -101,7 +101,7 @@ export default function DailyQuiz() {
     const equityData = Array.isArray(result.result)
       ? result.result.map(
           (item: HandVsRangeResult) =>
-            [item.opponentHand, item.equity] as [string, number]
+            [item.villain_hand, item.equity] as [string, number]
         )
       : [];
 
@@ -195,7 +195,9 @@ export default function DailyQuiz() {
               "opponentHand" in dataPoint
                 ? (dataPoint as { opponentHand: string }).opponentHand
                 : "";
-            return opponentHand ? `Opponent Hand: ${opponentHand}` : "";
+            return opponentHand
+              ? `Opponent Hand: ${opponentHand}`
+              : "ぎりないよ";
           },
           label: (context: TooltipItem<"bar">) => {
             const y =
