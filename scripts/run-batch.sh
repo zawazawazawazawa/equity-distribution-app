@@ -6,7 +6,7 @@
 # オプション:
 #   -l <ファイル>    : ログファイル (デフォルト: stdout)
 #   -d <ディレクトリ> : データディレクトリ (デフォルト: data)
-#   -D <YYYY-MM-DD> : 開始日付 (デフォルト: 本日)
+#   -D <YYYY-MM-DD> : 開始日付 (デフォルト: 翌日)
 #   -N <日数>       : 生成する日数 (デフォルト: 7日間、開始日から1週間)
 #   -H <ホスト>      : PostgreSQLホスト (デフォルト: localhost)
 #   -p <ポート>      : PostgreSQLポート (デフォルト: 5432)
@@ -58,7 +58,7 @@ while getopts "l:d:D:N:H:p:u:P:n:h" opt; do
       echo "オプション:"
       echo "  -l <ファイル>    : ログファイル (デフォルト: stdout)"
       echo "  -d <ディレクトリ> : データディレクトリ (デフォルト: data)"
-      echo "  -D <YYYY-MM-DD> : 開始日付 (デフォルト: 本日)"
+      echo "  -D <YYYY-MM-DD> : 開始日付 (デフォルト: 翌日)"
       echo "  -N <日数>       : 生成する日数 (デフォルト: 7日間、開始日から1週間)"
       echo "  -H <ホスト>      : PostgreSQLホスト (デフォルト: localhost)"
       echo "  -p <ポート>      : PostgreSQLポート (デフォルト: 5432)"
@@ -82,7 +82,14 @@ done
 # 開始日付の設定
 START_DATE=$DATE
 if [ -z "$START_DATE" ]; then
-  START_DATE=$(date "+%Y-%m-%d")  # デフォルトは本日
+  # デフォルトは翌日
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    START_DATE=$(date -v+1d "+%Y-%m-%d")
+  else
+    # Linux
+    START_DATE=$(date -d "tomorrow" "+%Y-%m-%d")
+  fi
 fi
 
 # バッチ処理の実行
