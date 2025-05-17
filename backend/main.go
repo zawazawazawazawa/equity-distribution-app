@@ -431,9 +431,34 @@ func handleGetDailyQuizResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 各行の「result」フィールドの中身をサンプリング
+	for i, item := range results {
+		// resultフィールドが存在し、配列である場合
+		if resultData, ok := item["result"].([]interface{}); ok && len(resultData) > 1000 {
+			log.Printf("Sampling 1000 items from %d total items in result field of row %d", len(resultData), i)
+
+			// 結果をシャッフル
+			rand.Seed(time.Now().UnixNano()) // 乱数生成器の初期化
+			shuffledResult := make([]interface{}, len(resultData))
+			copy(shuffledResult, resultData)
+			rand.Shuffle(len(shuffledResult), func(i, j int) {
+				shuffledResult[i], shuffledResult[j] = shuffledResult[j], shuffledResult[i]
+			})
+
+			// 最初の1万件を選択
+			sampledResult := shuffledResult[:1000]
+
+			// サンプリングした配列を元の「result」フィールドに戻す
+			results[i]["result"] = sampledResult
+		}
+	}
+
+	// 全ての結果を返す（各行の「result」フィールドの中身はサンプリング済み）
+	resultsToReturn := results
+
 	// 結果をJSONで返す
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(results); err != nil {
+	if err := json.NewEncoder(w).Encode(resultsToReturn); err != nil {
 		log.Printf("Error encoding JSON response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
