@@ -1,6 +1,7 @@
 # Golang
 backend/sample_input.csv
 badkend/.env
+backend/images/daily-quiz/
 
 # MacOS
 .DS_Store

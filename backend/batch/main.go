@@ -18,6 +18,7 @@ import (
 
 	"equity-distribution-backend/pkg/db"
 	"equity-distribution-backend/pkg/fileio"
+	"equity-distribution-backend/pkg/image"
 	pkrlib "equity-distribution-backend/pkg/poker"
 )
 
@@ -319,6 +320,27 @@ func main() {
 	}
 
 	log.Println("All scenarios processed successfully")
+
+	// 1問目のシナリオを使用して画像生成
+	if len(results) > 0 {
+		firstResult := results[0]
+		err := image.GenerateDailyQuizImage(
+			targetDate,
+			firstResult.Scenario.Name,
+			firstResult.HeroHand,
+			firstResult.Flop,
+		)
+		if err != nil {
+			log.Printf("Error generating daily quiz image: %v", err)
+		} else {
+			log.Printf("Successfully generated daily quiz image for %s", targetDate.Format("2006-01-02"))
+		}
+
+		// 明示的にGCを呼び出し
+		runtime.GC()
+
+		log.Println("Image generation completed")
+	}
 }
 
 // コマンドライン引数を解析する
