@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"equity-distribution-backend/pkg/fileio"
 	"equity-distribution-backend/pkg/image"
 	pkrlib "equity-distribution-backend/pkg/poker"
+	"equity-distribution-backend/pkg/storage"
 )
 
 // シナリオ定義
@@ -89,6 +91,9 @@ type BatchConfig struct {
 	// 並列処理の設定
 	EnableParallelProcessing bool // 並列処理の有効/無効
 	MaxParallelJobs          int  // 最大同時実行数
+
+	// 画像アップロード設定
+	EnableImageUpload bool // 画像アップロードの有効/無効
 }
 
 func main() {
@@ -321,25 +326,61 @@ func main() {
 
 	log.Println("All scenarios processed successfully")
 
-	// 1問目のシナリオを使用して画像生成
-	if len(results) > 0 {
-		firstResult := results[0]
-		err := image.GenerateDailyQuizImage(
-			targetDate,
-			firstResult.Scenario.Name,
-			firstResult.HeroHand,
-			firstResult.Flop,
-		)
-		if err != nil {
-			log.Printf("Error generating daily quiz image: %v", err)
-		} else {
-			log.Printf("Successfully generated daily quiz image for %s", targetDate.Format("2006-01-02"))
+	// 画像アップロードが有効な場合のみ画像生成とアップロードを実行
+	if config.EnableImageUpload {
+		log.Println("Image upload is enabled. Starting image generation and upload...")
+
+		// 1問目のシナリオを使用して画像生成
+		if len(results) > 0 {
+			firstResult := results[0]
+			imagePath := filepath.Join("images/daily-quiz", targetDate.Format("2006-01-02")+".png")
+
+			err := image.GenerateDailyQuizImage(
+				targetDate,
+				firstResult.Scenario.Name,
+				firstResult.HeroHand,
+				firstResult.Flop,
+			)
+			if err != nil {
+				log.Printf("Error generating daily quiz image: %v", err)
+			} else {
+				log.Printf("Successfully generated daily quiz image for %s", targetDate.Format("2006-01-02"))
+
+				// R2設定を取得
+				r2Config := storage.R2Config{
+					Endpoint:   getEnvOrDefault("R2_ENDPOINT", ""),
+					AccessKey:  getEnvOrDefault("R2_ACCESS_KEY", ""),
+					SecretKey:  getEnvOrDefault("R2_SECRET_KEY", ""),
+					BucketName: getEnvOrDefault("R2_BUCKET", ""),
+				}
+
+				// R2クライアントを作成
+				r2Client, err := storage.GetR2Client(r2Config)
+				if err != nil {
+					log.Printf("Error creating R2 client: %v", err)
+				} else {
+					// 画像をR2にアップロード
+					objectKey := "daily-quiz/" + targetDate.Format("2006-01-02") + ".png"
+					err = storage.UploadImageToR2(r2Client, r2Config.BucketName, imagePath, objectKey)
+					if err != nil {
+						log.Printf("Error uploading image to R2: %v", err)
+					} else {
+						log.Printf("Successfully uploaded image to R2: %s", objectKey)
+
+						// 公開URLを生成
+						publicURL := storage.GetR2ObjectURL(r2Config.Endpoint, r2Config.BucketName, objectKey)
+						log.Printf("Image public URL: %s", publicURL)
+					}
+				}
+			}
+
+			// 明示的にGCを呼び出し
+			runtime.GC()
+
+			log.Println("Image generation and upload completed")
 		}
-
-		// 明示的にGCを呼び出し
-		runtime.GC()
-
-		log.Println("Image generation completed")
+	} else {
+		log.Println("Image upload is disabled. Skipping image generation and upload.")
 	}
 }
 
@@ -358,6 +399,9 @@ func parseFlags() *BatchConfig {
 	enableParallelProcessing := getEnvBoolOrDefault("ENABLE_PARALLEL_PROCESSING", true)
 	maxParallelJobs := getEnvIntOrDefault("MAX_PARALLEL_JOBS", runtime.NumCPU())
 
+	// 画像アップロード設定を環境変数から取得
+	enableImageUpload := getEnvBoolOrDefault("ENABLE_IMAGE_UPLOAD", true)
+
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
 	flag.StringVar(&config.DataDir, "data", "data", "Directory containing preset data files")
 	flag.StringVar(&config.Date, "date", "", "Date for quiz in YYYY-MM-DD format (default: tomorrow)")
@@ -372,6 +416,9 @@ func parseFlags() *BatchConfig {
 	// 並列処理の設定
 	flag.BoolVar(&config.EnableParallelProcessing, "parallel", enableParallelProcessing, "Enable parallel processing")
 	flag.IntVar(&config.MaxParallelJobs, "jobs", maxParallelJobs, "Maximum number of parallel jobs")
+
+	// 画像アップロード設定
+	flag.BoolVar(&config.EnableImageUpload, "image-upload", enableImageUpload, "Enable image generation and upload")
 
 	flag.Parse()
 
