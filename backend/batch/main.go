@@ -130,114 +130,6 @@ func main() {
 	// 並列処理の設定
 	var results []EquityResult
 
-	if config.EnableParallelProcessing {
-		// 並列処理が有効な場合
-		maxJobs := config.MaxParallelJobs
-		log.Printf("Starting parallel processing for %d scenarios using %d jobs", len(scenarios), maxJobs)
-
-		// 同時実行数を制限するセマフォ
-		semaphore := make(chan struct{}, maxJobs)
-		var wg sync.WaitGroup
-
-		// 結果を収集するためのチャネル
-		resultChan := make(chan EquityResult, len(scenarios))
-
-		// 各シナリオを並列で実行
-		for i, scenario := range scenarios {
-			wg.Add(1)
-			semaphore <- struct{}{} // セマフォを取得
-
-			// シナリオ処理をgoroutineで実行
-			go func(index int, currentScenario Scenario) {
-				defer wg.Done()
-				defer func() { <-semaphore }() // セマフォを解放
-
-				log.Printf("Starting scenario %d: %s", index+1, currentScenario.Name)
-				log.Printf("Selected scenario: %s", currentScenario.Name)
-
-				// シナリオに基づいてハンドとフロップを生成
-				heroHand, opponentRange, flop := generateHandsAndFlop(currentScenario, config)
-
-				// equity計算
-				equities, err := calculateEquity(heroHand, opponentRange, flop, config)
-				if err != nil {
-					log.Printf("Error calculating equity: %v", err)
-					log.Printf("Scenario %d failed: %v", index+1, err)
-					return
-				}
-
-				// 平均エクイティの計算
-				var totalEquity float64
-				for _, equity := range equities {
-					totalEquity += equity
-				}
-				averageEquity := totalEquity / float64(len(equities))
-
-				// 結果をチャネルに送信
-				resultChan <- EquityResult{
-					Scenario:      currentScenario,
-					HeroHand:      heroHand,
-					Flop:          flop,
-					Equities:      equities,
-					AverageEquity: averageEquity,
-				}
-
-				log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
-					index+1, currentScenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
-			}(i, scenario)
-		}
-
-		// すべてのgoroutineが完了するのを待つ
-		go func() {
-			wg.Wait()
-			close(resultChan)
-		}()
-
-		// 結果を収集
-		for result := range resultChan {
-			results = append(results, result)
-		}
-	} else {
-		// 並列処理が無効な場合（シーケンシャル処理）
-		log.Printf("Starting sequential processing for %d scenarios", len(scenarios))
-
-		// 各シナリオを順次実行
-		for i, scenario := range scenarios {
-			log.Printf("Starting scenario %d: %s", i+1, scenario.Name)
-			log.Printf("Selected scenario: %s", scenario.Name)
-
-			// シナリオに基づいてハンドとフロップを生成
-			heroHand, opponentRange, flop := generateHandsAndFlop(scenario, config)
-
-			// equity計算
-			equities, err := calculateEquity(heroHand, opponentRange, flop, config)
-			if err != nil {
-				log.Printf("Error calculating equity: %v", err)
-				log.Printf("Scenario %d failed: %v", i+1, err)
-				continue
-			}
-
-			// 平均エクイティの計算
-			var totalEquity float64
-			for _, equity := range equities {
-				totalEquity += equity
-			}
-			averageEquity := totalEquity / float64(len(equities))
-
-			// 結果を追加
-			results = append(results, EquityResult{
-				Scenario:      scenario,
-				HeroHand:      heroHand,
-				Flop:          flop,
-				Equities:      equities,
-				AverageEquity: averageEquity,
-			})
-
-			log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
-				i+1, scenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
-		}
-	}
-
 	// 日付の処理
 	var targetDate time.Time
 	if config.Date == "" {
@@ -252,79 +144,244 @@ func main() {
 		}
 	}
 
-	// 結果をシナリオごとにグループ化
-	scenarioResults := make(map[string][]EquityResult)
-	for _, result := range results {
-		scenarioName := result.Scenario.Name
-		scenarioResults[scenarioName] = append(scenarioResults[scenarioName], result)
+	// 指定された日付のデータがデータベースに既に存在するか確認
+	existingResults, err := db.GetDailyQuizResultsByDate(pgDB, targetDate)
+	if err != nil {
+		log.Printf("Error checking existing data: %v", err)
 	}
 
-	// 各シナリオごとに一つのレコードとして保存
-	for scenarioName, scenarioResultList := range scenarioResults {
-		if len(scenarioResultList) == 0 {
-			continue
-		}
+	// existingResultsが空でない場合は、すでにデータが存在するため、existingResultsをresultsに変換して代入
+	if len(existingResults) > 0 {
+		log.Printf("Data for %s already exists in the database. Skipping processing.", targetDate.Format("2006-01-02"))
 
-		// VillainEquity構造体を定義
-		type VillainEquity struct {
-			VillainHand string  `json:"villain_hand"`
-			Equity      float64 `json:"equity"`
-		}
+		// []map[string]interface{}から[]EquityResultに変換
+		for _, result := range existingResults {
+			scenarioName, _ := result["scenario"].(string)
+			heroHand, _ := result["hero_hand"].(string)
+			flopStr, _ := result["flop"].(string) // フロップ文字列を取得
+			averageEquity, _ := result["average_equity"].(float64)
 
-		// このシナリオのすべての結果から対戦相手のハンドとエクイティの配列を作成
-		allVillainEquities := []VillainEquity{}
-
-		// 平均エクイティの計算用
-		totalEquity := 0.0
-
-		// 最初の結果からheroHandとflopを取得（代表値として）
-		var heroHand string
-		var flop string
-		if len(scenarioResultList) > 0 {
-			heroHand = scenarioResultList[0].HeroHand
-			flop = pkrlib.GenerateBoardString(scenarioResultList[0].Flop)
-		}
-
-		for _, result := range scenarioResultList {
-			// Equitiesマップを配列に変換して追加
-			for villainHand, equity := range result.Equities {
-				allVillainEquities = append(allVillainEquities, VillainEquity{
-					VillainHand: villainHand,
-					Equity:      equity,
-				})
+			// シナリオの検索
+			var foundScenario Scenario
+			for _, s := range scenarios {
+				if s.Name == scenarioName {
+					foundScenario = s
+					break
+				}
 			}
 
-			totalEquity += result.AverageEquity
+			// フロップの文字列をpoker.Card配列に変換
+			var flopCards []poker.Card
+			if flopStr != "" {
+				// フロップ文字列は "2d3cJc" のような形式と仮定
+				// 2文字ずつ（数字+スート）で分割して処理
+				for i := 0; i < len(flopStr); i += 2 {
+					if i+2 <= len(flopStr) {
+						cardStr := strings.ToUpper(flopStr[i:i+1]) + strings.ToLower(flopStr[i+1:i+2])
+						card := poker.NewCard(cardStr)
+						flopCards = append(flopCards, card)
+					}
+				}
+				log.Printf("Using flop cards: %s", pkrlib.GenerateBoardString(flopCards))
+			} else {
+				log.Printf("Warning: No flop data found for date %s", targetDate.Format("2006-01-02"))
+			}
+
+			// Equitiesマップの作成（データベースから取得したデータに基づく）
+			equities := make(map[string]float64)
+
+			results = append(results, EquityResult{
+				Scenario:      foundScenario,
+				HeroHand:      heroHand,
+				Flop:          flopCards,
+				Equities:      equities,
+				AverageEquity: averageEquity,
+			})
 		}
+	} else {
+		// 計算処理に進む
+		if config.EnableParallelProcessing {
+			// 並列処理が有効な場合
+			maxJobs := config.MaxParallelJobs
+			log.Printf("Starting parallel processing for %d scenarios using %d jobs", len(scenarios), maxJobs)
 
-		// VillainEquities配列をJSON文字列に変換
-		villainEquitiesJSON, err := json.Marshal(allVillainEquities)
-		if err != nil {
-			log.Printf("Error marshaling villain equities for scenario %s to JSON: %v", scenarioName, err)
-			continue
-		}
+			// 同時実行数を制限するセマフォ
+			semaphore := make(chan struct{}, maxJobs)
+			var wg sync.WaitGroup
 
-		// 平均エクイティはすべての結果の平均を使用
-		averageEquity := totalEquity / float64(len(scenarioResultList))
+			// 結果を収集するためのチャネル
+			resultChan := make(chan EquityResult, len(scenarios))
 
-		// シナリオごとに一つのレコードとしてPostgreSQLに保存
-		err = db.InsertDailyQuizResult(
-			pgDB,
-			targetDate,
-			scenarioName,
-			heroHand,
-			flop,
-			string(villainEquitiesJSON), // VillainEquitiesの配列だけをJSON文字列として保存
-			averageEquity,
-		)
-		if err != nil {
-			log.Printf("Error saving villain equities for scenario %s to PostgreSQL: %v", scenarioName, err)
+			// 各シナリオを並列で実行
+			for i, scenario := range scenarios {
+				wg.Add(1)
+				semaphore <- struct{}{} // セマフォを取得
+
+				// シナリオ処理をgoroutineで実行
+				go func(index int, currentScenario Scenario) {
+					defer wg.Done()
+					defer func() { <-semaphore }() // セマフォを解放
+
+					log.Printf("Starting scenario %d: %s", index+1, currentScenario.Name)
+					log.Printf("Selected scenario: %s", currentScenario.Name)
+
+					// シナリオに基づいてハンドとフロップを生成
+					heroHand, opponentRange, flop := generateHandsAndFlop(currentScenario, config)
+
+					// equity計算
+					equities, err := calculateEquity(heroHand, opponentRange, flop, config)
+					if err != nil {
+						log.Printf("Error calculating equity: %v", err)
+						log.Printf("Scenario %d failed: %v", index+1, err)
+						return
+					}
+
+					// 平均エクイティの計算
+					var totalEquity float64
+					for _, equity := range equities {
+						totalEquity += equity
+					}
+					averageEquity := totalEquity / float64(len(equities))
+
+					// 結果をチャネルに送信
+					resultChan <- EquityResult{
+						Scenario:      currentScenario,
+						HeroHand:      heroHand,
+						Flop:          flop,
+						Equities:      equities,
+						AverageEquity: averageEquity,
+					}
+
+					log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
+						index+1, currentScenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
+				}(i, scenario)
+			}
+
+			// すべてのgoroutineが完了するのを待つ
+			go func() {
+				wg.Wait()
+				close(resultChan)
+			}()
+
+			// 結果を収集
+			for result := range resultChan {
+				results = append(results, result)
+			}
 		} else {
-			log.Printf("Successfully saved villain equities for scenario %s as one record to PostgreSQL", scenarioName)
-		}
-	}
+			// 並列処理が無効な場合（シーケンシャル処理）
+			log.Printf("Starting sequential processing for %d scenarios", len(scenarios))
 
-	log.Println("All scenarios processed successfully")
+			// 各シナリオを順次実行
+			for i, scenario := range scenarios {
+				log.Printf("Starting scenario %d: %s", i+1, scenario.Name)
+				log.Printf("Selected scenario: %s", scenario.Name)
+
+				// シナリオに基づいてハンドとフロップを生成
+				heroHand, opponentRange, flop := generateHandsAndFlop(scenario, config)
+
+				// equity計算
+				equities, err := calculateEquity(heroHand, opponentRange, flop, config)
+				if err != nil {
+					log.Printf("Error calculating equity: %v", err)
+					log.Printf("Scenario %d failed: %v", i+1, err)
+					continue
+				}
+
+				// 平均エクイティの計算
+				var totalEquity float64
+				for _, equity := range equities {
+					totalEquity += equity
+				}
+				averageEquity := totalEquity / float64(len(equities))
+
+				// 結果を追加
+				results = append(results, EquityResult{
+					Scenario:      scenario,
+					HeroHand:      heroHand,
+					Flop:          flop,
+					Equities:      equities,
+					AverageEquity: averageEquity,
+				})
+
+				log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
+					i+1, scenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
+			}
+		}
+
+		// 結果をシナリオごとにグループ化
+		scenarioResults := make(map[string][]EquityResult)
+		for _, result := range results {
+			scenarioName := result.Scenario.Name
+			scenarioResults[scenarioName] = append(scenarioResults[scenarioName], result)
+		}
+
+		// 各シナリオごとに一つのレコードとして保存
+		for scenarioName, scenarioResultList := range scenarioResults {
+			if len(scenarioResultList) == 0 {
+				continue
+			}
+
+			// VillainEquity構造体を定義
+			type VillainEquity struct {
+				VillainHand string  `json:"villain_hand"`
+				Equity      float64 `json:"equity"`
+			}
+
+			// このシナリオのすべての結果から対戦相手のハンドとエクイティの配列を作成
+			allVillainEquities := []VillainEquity{}
+
+			// 平均エクイティの計算用
+			totalEquity := 0.0
+
+			// 最初の結果からheroHandとflopを取得（代表値として）
+			var heroHand string
+			var flop string
+			if len(scenarioResultList) > 0 {
+				heroHand = scenarioResultList[0].HeroHand
+				flop = pkrlib.GenerateBoardString(scenarioResultList[0].Flop)
+			}
+
+			for _, result := range scenarioResultList {
+				// Equitiesマップを配列に変換して追加
+				for villainHand, equity := range result.Equities {
+					allVillainEquities = append(allVillainEquities, VillainEquity{
+						VillainHand: villainHand,
+						Equity:      equity,
+					})
+				}
+
+				totalEquity += result.AverageEquity
+			}
+
+			// VillainEquities配列をJSON文字列に変換
+			villainEquitiesJSON, err := json.Marshal(allVillainEquities)
+			if err != nil {
+				log.Printf("Error marshaling villain equities for scenario %s to JSON: %v", scenarioName, err)
+				continue
+			}
+
+			// 平均エクイティはすべての結果の平均を使用
+			averageEquity := totalEquity / float64(len(scenarioResultList))
+
+			// シナリオごとに一つのレコードとしてPostgreSQLに保存
+			err = db.InsertDailyQuizResult(
+				pgDB,
+				targetDate,
+				scenarioName,
+				heroHand,
+				flop,
+				string(villainEquitiesJSON), // VillainEquitiesの配列だけをJSON文字列として保存
+				averageEquity,
+			)
+			if err != nil {
+				log.Printf("Error saving villain equities for scenario %s to PostgreSQL: %v", scenarioName, err)
+			} else {
+				log.Printf("Successfully saved villain equities for scenario %s as one record to PostgreSQL", scenarioName)
+			}
+		}
+
+		log.Println("All scenarios processed successfully")
+	}
 
 	// 画像アップロードが有効な場合のみ画像生成とアップロードを実行
 	if config.EnableImageUpload {
