@@ -13,11 +13,12 @@ import (
 	"github.com/chehsunliu/poker"
 	"github.com/joho/godotenv"
 
+	"equity-distribution-backend/pkg/db"
 	"equity-distribution-backend/pkg/image"
 	"equity-distribution-backend/pkg/storage"
 )
 
-// R2設定を保持する構造体
+// 設定を保持する構造体
 type Config struct {
 	// 日付と画像生成用パラメータ
 	Date         string
@@ -30,6 +31,13 @@ type Config struct {
 	R2AccessKey string
 	R2SecretKey string
 	R2Bucket    string
+
+	// PostgreSQL設定
+	PostgresHost     string
+	PostgresPort     int
+	PostgresUser     string
+	PostgresPassword string
+	PostgresDBName   string
 
 	// その他の設定
 	LogFile string
@@ -65,8 +73,123 @@ func main() {
 	}
 
 	log.Printf("Using date: %s", targetDate.Format("2006-01-02"))
-	log.Printf("Using scenario: %s", config.ScenarioName)
-	log.Printf("Using hero hand: %s", config.HeroHand)
+
+	// PostgreSQL接続の確立
+	pgConfig := db.PostgresConfig{
+		Host:     config.PostgresHost,
+		Port:     config.PostgresPort,
+		User:     config.PostgresUser,
+		Password: config.PostgresPassword,
+		DBName:   config.PostgresDBName,
+	}
+
+	pgDB, err := db.GetPostgresConnection(pgConfig)
+	if err != nil {
+		log.Printf("Warning: Failed to connect to PostgreSQL: %v", err)
+		log.Println("Proceeding with command line arguments instead.")
+	} else {
+		defer pgDB.Close()
+		log.Println("Successfully connected to PostgreSQL.")
+
+		// データベースから指定された日付のデータを取得
+		results, err := db.GetDailyQuizResultsByDate(pgDB, targetDate)
+		if err != nil {
+			log.Printf("Warning: Failed to get data from PostgreSQL: %v", err)
+			log.Println("Proceeding with command line arguments instead.")
+		} else if len(results) > 0 {
+			// 1番目のデータを使用
+			firstResult := results[0]
+			log.Printf("Found %d results in database. Using the first one.", len(results))
+
+			// データベースから取得したデータを使用
+			config.ScenarioName = firstResult["scenario"].(string)
+			config.HeroHand = firstResult["hero_hand"].(string)
+			flopStr := firstResult["flop"].(string)
+
+			log.Printf("Using data from database - Scenario: %s, Hero Hand: %s, Flop: %s",
+				config.ScenarioName, config.HeroHand, flopStr)
+
+			// 画像ファイルのパス
+			imagePath := filepath.Join("images/daily-quiz", targetDate.Format("2006-01-02")+".png")
+
+			// フロップの処理
+			var flopCards []poker.Card
+			if flopStr != "" {
+				// フロップ文字列からカードを解析（例: "[2c, 3d, 4h]" -> "2c3d4h"）
+				cleanFlopStr := strings.ReplaceAll(flopStr, "[", "")
+				cleanFlopStr = strings.ReplaceAll(cleanFlopStr, "]", "")
+				cleanFlopStr = strings.ReplaceAll(cleanFlopStr, " ", "")
+				cleanFlopStr = strings.ReplaceAll(cleanFlopStr, ",", "")
+				flopCards = parseFlop(cleanFlopStr)
+			} else {
+				// フロップが空の場合はデフォルトのフロップを使用
+				flopCards = []poker.Card{
+					poker.NewCard("2c"),
+					poker.NewCard("3d"),
+					poker.NewCard("4h"),
+				}
+			}
+
+			log.Printf("Using flop: %v", formatFlop(flopCards))
+
+			// 画像生成
+			log.Println("Generating image...")
+			err = image.GenerateDailyQuizImage(
+				targetDate,
+				config.ScenarioName,
+				config.HeroHand,
+				flopCards,
+			)
+			if err != nil {
+				log.Fatalf("Error generating daily quiz image: %v", err)
+			}
+			log.Printf("Successfully generated daily quiz image at: %s", imagePath)
+
+			// R2設定を確認
+			if config.R2Endpoint == "" || config.R2AccessKey == "" || config.R2SecretKey == "" || config.R2Bucket == "" {
+				log.Println("R2 configuration is incomplete. Skipping upload.")
+				log.Println("Image generation completed successfully.")
+				return
+			}
+
+			// R2設定
+			r2Config := storage.R2Config{
+				Endpoint:   config.R2Endpoint,
+				AccessKey:  config.R2AccessKey,
+				SecretKey:  config.R2SecretKey,
+				BucketName: config.R2Bucket,
+			}
+
+			// R2クライアントを作成
+			log.Println("Creating R2 client...")
+			r2Client, err := storage.GetR2Client(r2Config)
+			if err != nil {
+				log.Fatalf("Error creating R2 client: %v", err)
+			}
+
+			// 画像をR2にアップロード
+			objectKey := "daily-quiz/" + targetDate.Format("2006-01-02") + ".png"
+			log.Printf("Uploading image to R2 with key: %s", objectKey)
+			err = storage.UploadImageToR2(r2Client, r2Config.BucketName, imagePath, objectKey)
+			if err != nil {
+				log.Fatalf("Error uploading image to R2: %v", err)
+			}
+			log.Printf("Successfully uploaded image to R2: %s", objectKey)
+
+			// 公開URLを生成
+			publicURL := storage.GetR2ObjectURL(r2Config.Endpoint, r2Config.BucketName, objectKey)
+			log.Printf("Image public URL: %s", publicURL)
+
+			log.Println("Image generation and upload completed successfully")
+			return
+		} else {
+			log.Printf("Warning: No data found in PostgreSQL for date: %s", targetDate.Format("2006-01-02"))
+			log.Println("Proceeding with command line arguments instead.")
+		}
+	}
+
+	// データベースからデータが取得できなかった場合はコマンドライン引数を使用
+	log.Printf("Using command line arguments - Scenario: %s, Hero Hand: %s", config.ScenarioName, config.HeroHand)
 
 	// フロップの処理
 	var flopCards []poker.Card
@@ -148,18 +271,32 @@ func parseFlags() *Config {
 	r2SecretKey := getEnvOrDefault("R2_SECRET_KEY", "")
 	r2Bucket := getEnvOrDefault("R2_BUCKET", "")
 
+	// PostgreSQL設定を環境変数から取得
+	postgresHost := getEnvOrDefault("POSTGRES_HOST", "localhost")
+	postgresPort := getEnvIntOrDefault("POSTGRES_PORT", 5432)
+	postgresUser := getEnvOrDefault("POSTGRES_USER", "postgres")
+	postgresPassword := getEnvOrDefault("POSTGRES_PASSWORD", "postgres")
+	postgresDBName := getEnvOrDefault("POSTGRES_DBNAME", "plo_equity")
+
 	// コマンドライン引数の定義
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
 	flag.StringVar(&config.Date, "date", "", "Date for quiz in YYYY-MM-DD format (default: today)")
-	flag.StringVar(&config.ScenarioName, "scenario", "SRP UTG vs BB", "Scenario name")
-	flag.StringVar(&config.HeroHand, "hand", "AsKsQsJs", "Hero hand (e.g., AsKsQsJs)")
-	flag.StringVar(&config.Flop, "flop", "", "Flop cards (e.g., 2c3d4h)")
+	flag.StringVar(&config.ScenarioName, "scenario", "SRP UTG vs BB", "Scenario name (fallback if database lookup fails)")
+	flag.StringVar(&config.HeroHand, "hand", "AsKsQsJs", "Hero hand (e.g., AsKsQsJs) (fallback if database lookup fails)")
+	flag.StringVar(&config.Flop, "flop", "", "Flop cards (e.g., 2c3d4h) (fallback if database lookup fails)")
 
 	// R2設定
 	flag.StringVar(&config.R2Endpoint, "r2-endpoint", r2Endpoint, "R2 endpoint")
 	flag.StringVar(&config.R2AccessKey, "r2-access-key", r2AccessKey, "R2 access key")
 	flag.StringVar(&config.R2SecretKey, "r2-secret-key", r2SecretKey, "R2 secret key")
 	flag.StringVar(&config.R2Bucket, "r2-bucket", r2Bucket, "R2 bucket name")
+
+	// PostgreSQL設定
+	flag.StringVar(&config.PostgresHost, "pg-host", postgresHost, "PostgreSQL host")
+	flag.IntVar(&config.PostgresPort, "pg-port", postgresPort, "PostgreSQL port")
+	flag.StringVar(&config.PostgresUser, "pg-user", postgresUser, "PostgreSQL user")
+	flag.StringVar(&config.PostgresPassword, "pg-password", postgresPassword, "PostgreSQL password")
+	flag.StringVar(&config.PostgresDBName, "pg-dbname", postgresDBName, "PostgreSQL database name")
 
 	flag.Parse()
 

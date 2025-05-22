@@ -15,6 +15,11 @@ SCENARIO="SRP UTG vs BB"
 HERO_HAND="AsKsQsJs"
 FLOP="2c3d4h"
 LOG_FILE=""
+PG_HOST="localhost"
+PG_PORT="5432"
+PG_USER="postgres"
+PG_PASSWORD="postgres"
+PG_DBNAME="plo_equity"
 
 # ヘルプメッセージ
 show_help() {
@@ -23,13 +28,21 @@ show_help() {
   echo "オプション:"
   echo "  -h, --help                このヘルプメッセージを表示"
   echo "  -d, --date DATE           日付を指定 (YYYY-MM-DD形式、デフォルト: 今日)"
-  echo "  -s, --scenario SCENARIO   シナリオ名を指定 (デフォルト: 'SRP UTG vs BB')"
-  echo "  -H, --hand HAND           ヒーローハンドを指定 (デフォルト: 'AsKsQsJs')"
-  echo "  -f, --flop FLOP           フロップを指定 (例: '2c3d4h'、デフォルト: '2c3d4h')"
+  echo "  -s, --scenario SCENARIO   シナリオ名を指定 (データベース検索失敗時のフォールバック、デフォルト: 'SRP UTG vs BB')"
+  echo "  -H, --hand HAND           ヒーローハンドを指定 (データベース検索失敗時のフォールバック、デフォルト: 'AsKsQsJs')"
+  echo "  -f, --flop FLOP           フロップを指定 (データベース検索失敗時のフォールバック、例: '2c3d4h'、デフォルト: '2c3d4h')"
   echo "  -l, --log FILE            ログファイルを指定"
+  echo ""
+  echo "PostgreSQL設定:"
+  echo "  --pg-host HOST            PostgreSQLホストを指定 (デフォルト: 'localhost')"
+  echo "  --pg-port PORT            PostgreSQLポートを指定 (デフォルト: '5432')"
+  echo "  --pg-user USER            PostgreSQLユーザーを指定 (デフォルト: 'postgres')"
+  echo "  --pg-password PASSWORD    PostgreSQLパスワードを指定 (デフォルト: 'postgres')"
+  echo "  --pg-dbname DBNAME        PostgreSQLデータベース名を指定 (デフォルト: 'plo_equity')"
   echo ""
   echo "例:"
   echo "  $0 --date 2023-05-22 --hand AdKdQdJd --flop 2h3s4c"
+  echo "  $0 --date 2023-05-22 --pg-host localhost --pg-dbname my_database"
   exit 0
 }
 
@@ -57,6 +70,26 @@ while [[ $# -gt 0 ]]; do
       ;;
     -l|--log)
       LOG_FILE="$2"
+      shift 2
+      ;;
+    --pg-host)
+      PG_HOST="$2"
+      shift 2
+      ;;
+    --pg-port)
+      PG_PORT="$2"
+      shift 2
+      ;;
+    --pg-user)
+      PG_USER="$2"
+      shift 2
+      ;;
+    --pg-password)
+      PG_PASSWORD="$2"
+      shift 2
+      ;;
+    --pg-dbname)
+      PG_DBNAME="$2"
       shift 2
       ;;
     *)
@@ -88,6 +121,9 @@ fi
 if [ -n "$LOG_FILE" ]; then
   CMD_ARGS="$CMD_ARGS -log=$LOG_FILE"
 fi
+
+# PostgreSQL設定
+CMD_ARGS="$CMD_ARGS -pg-host=$PG_HOST -pg-port=$PG_PORT -pg-user=$PG_USER -pg-password=$PG_PASSWORD -pg-dbname=$PG_DBNAME"
 
 # R2設定の環境変数が設定されているか確認
 if [ -z "$R2_ENDPOINT" ] || [ -z "$R2_ACCESS_KEY" ] || [ -z "$R2_SECRET_KEY" ] || [ -z "$R2_BUCKET" ]; then
