@@ -7,7 +7,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,12 +21,25 @@ import (
 // カード画像キャッシュ
 var cardImageCache sync.Map
 
+// extractPositionFromScenario はシナリオ文字列からポジションを抽出します
+func extractPositionFromScenario(scenario string) string {
+	// ポジションを表す一般的な略語（UTG, MP, CO, BTN, SB, BB）を検索
+	re := regexp.MustCompile(`\b(UTG|MP|CO|BTN|SB|BB)\b`)
+	match := re.FindString(scenario)
+	if match == "" {
+		return "不明"
+	}
+	return strings.ToUpper(match)
+}
+
 // GenerateDailyQuizImage は日毎のクイズ画像を生成します
 func GenerateDailyQuizImage(date time.Time, scenario string, heroHand string, flop []poker.Card) error {
+	// シナリオからポジションを抽出
+	heroPosition := extractPositionFromScenario(scenario)
 	// 1. 適切なサイズでキャンバスを作成（X投稿に最適化）
 	const (
-		width  = 700 // 必要十分なサイズに抑える
-		height = 700
+		width  = 1200 // 必要十分なサイズに抑える
+		height = 630
 	)
 
 	// 2. 出力ディレクトリの確保
@@ -55,12 +70,12 @@ func GenerateDailyQuizImage(date time.Time, scenario string, heroHand string, fl
 	}
 
 	// 8. ヒーローハンドを描画
-	if err := drawHeroHand(dc, heroHand, 100, 230); err != nil {
+	if err := drawHeroHand(dc, heroHand, heroPosition, 100, 330); err != nil {
 		return err
 	}
 
 	// 9. フロップを描画（ヒーローハンドとの間に十分なスペースを確保）
-	if err := drawFlop(dc, flop, 100, 500); err != nil {
+	if err := drawFlop(dc, flop, 700, 330); err != nil {
 		return err
 	}
 
@@ -78,7 +93,7 @@ func GenerateDailyQuizImage(date time.Time, scenario string, heroHand string, fl
 // タイトルを描画する関数
 func drawTitle(dc *gg.Context, title string) error {
 	// フォントの設定
-	if err := dc.LoadFontFace("fonts/Inter-Bold.ttf", 48); err != nil {
+	if err := dc.LoadFontFace("fonts/Inter-Bold.ttf", 60); err != nil {
 		// フォントが見つからない場合はエラーを無視して続行
 		log.Printf("Warning: Failed to load font: %v", err)
 	}
@@ -87,7 +102,7 @@ func drawTitle(dc *gg.Context, title string) error {
 	dc.SetRGB(0, 0, 0)
 
 	// タイトルを中央揃えで描画
-	dc.DrawStringAnchored(title, float64(dc.Width())/2, 50, 0.5, 0.5)
+	dc.DrawStringAnchored(title, float64(dc.Width())/2, 80, 0.5, 0.5)
 
 	return nil
 }
@@ -95,7 +110,7 @@ func drawTitle(dc *gg.Context, title string) error {
 // シナリオ情報を描画する関数
 func drawScenario(dc *gg.Context, scenario string, date time.Time) error {
 	// フォントの設定（タイトルより小さめ）
-	if err := dc.LoadFontFace("fonts/Inter-Regular.ttf", 36); err != nil {
+	if err := dc.LoadFontFace("fonts/Inter-Regular.ttf", 48); err != nil {
 		// フォントが見つからない場合はエラーを無視して続行
 		log.Printf("Warning: Failed to load font: %v", err)
 	}
@@ -104,23 +119,23 @@ func drawScenario(dc *gg.Context, scenario string, date time.Time) error {
 	dc.SetRGB(0, 0, 0)
 
 	// シナリオ名を描画
-	dc.DrawStringAnchored("Situation:", 100, 120, 0, 0.5)
-	dc.DrawStringAnchored(scenario, 300, 120, 0, 0.5)
+	dc.DrawStringAnchored("Situation:", 100, 180, 0, 0.5)
+	dc.DrawStringAnchored(scenario, 330, 180, 0, 0.5)
 
 	return nil
 }
 
 // ヒーローハンドを描画する関数
-func drawHeroHand(dc *gg.Context, heroHand string, x, y float64) error {
+func drawHeroHand(dc *gg.Context, heroHand string, position string, x, y float64) error {
 	// フォントの設定
-	if err := dc.LoadFontFace("fonts/Inter-Regular.ttf", 36); err != nil {
+	if err := dc.LoadFontFace("fonts/Inter-Regular.ttf", 48); err != nil {
 		// フォントが見つからない場合はエラーを無視して続行
 		log.Printf("Warning: Failed to load font: %v", err)
 	}
 
 	// テキストの色を設定（黒色）
 	dc.SetRGB(0, 0, 0)
-	dc.DrawStringAnchored("Hero: BB", x, y-40, 0, 0.5)
+	dc.DrawStringAnchored("Hero: "+position, x, y-60, 0, 0.5)
 
 	// カードの間隔
 	const cardSpacing = 25
@@ -160,7 +175,7 @@ func drawHeroHand(dc *gg.Context, heroHand string, x, y float64) error {
 // フロップを描画する関数
 func drawFlop(dc *gg.Context, flop []poker.Card, x, y float64) error {
 	// フォントの設定
-	if err := dc.LoadFontFace("fonts/Inter-Regular.ttf", 36); err != nil {
+	if err := dc.LoadFontFace("fonts/Inter-Regular.ttf", 48); err != nil {
 		// フォントが見つからない場合はエラーを無視して続行
 		log.Printf("Warning: Failed to load font: %v", err)
 	}
@@ -171,7 +186,7 @@ func drawFlop(dc *gg.Context, flop []poker.Card, x, y float64) error {
 	// "Flop:"ラベルをヒーローハンドとフロップカードの間の中央に表示
 	// ヒーローハンドの位置は約250、フロップの位置は約500なので、その中間点に配置
 	// フロップカードと重ならないように少し上に配置
-	dc.DrawStringAnchored("Flop:", 150, 460, 0.5, 0.5)
+	dc.DrawStringAnchored("Flop:", 750, 270, 0.5, 0.5)
 
 	// カードの間隔
 	const cardSpacing = 25
@@ -237,7 +252,7 @@ func getCardImage(card string, suit string) (image.Image, error) {
 
 	// 必要に応じてリサイズ（メモリ使用量削減）
 	const (
-		cardWidth = 100
+		cardWidth = 110
 	)
 	resizedImg := resize.Resize(cardWidth, 0, img, resize.Lanczos3)
 
