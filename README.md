@@ -7,6 +7,37 @@
 - Docker
 - AWS CLI
 - jq
+- Go 1.23+
+
+### PostgreSQL の操作
+
+#### 1. PostgreSQL の起動
+
+```bash
+docker compose up -d postgres
+```
+
+#### 2. データベースマイグレーション
+
+```bash
+# マイグレーション適用
+./scripts/migrate-up.sh
+
+# ロールバック
+./scripts/migrate-down.sh
+
+# ステータス確認
+./scripts/migrate-status.sh
+```
+
+#### 3. データベース接続
+
+```bash
+# PostgreSQLに直接接続
+docker exec -it postgres_plo psql -U postgres -d plo_equity
+```
+
+詳細なマイグレーション管理については、[backend/migrations/README.md](backend/migrations/README.md) を参照してください。
 
 ### DynamoDB の操作
 
