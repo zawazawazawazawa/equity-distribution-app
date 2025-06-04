@@ -308,6 +308,9 @@ func main() {
 			}
 		}
 
+		// バッチ処理用のデータを準備
+		var batchResults []db.DailyQuizResult
+
 		// 結果をシナリオごとにグループ化
 		scenarioResults := make(map[string][]EquityResult)
 		for _, result := range results {
@@ -315,7 +318,7 @@ func main() {
 			scenarioResults[scenarioName] = append(scenarioResults[scenarioName], result)
 		}
 
-		// 各シナリオごとに一つのレコードとして保存
+		// 各シナリオごとにバッチ用データを作成
 		for scenarioName, scenarioResultList := range scenarioResults {
 			if len(scenarioResultList) == 0 {
 				continue
@@ -363,21 +366,26 @@ func main() {
 			// 平均エクイティはすべての結果の平均を使用
 			averageEquity := totalEquity / float64(len(scenarioResultList))
 
-			// シナリオごとに一つのレコードとしてPostgreSQLに保存
-			err = db.InsertDailyQuizResult(
-				pgDB,
-				targetDate,
-				scenarioName,
-				heroHand,
-				flop,
-				string(villainEquitiesJSON), // VillainEquitiesの配列だけをJSON文字列として保存
-				averageEquity,
-				"4card_plo", // ゲームタイプを明示的に指定
-			)
+			// バッチ用データに追加
+			batchResults = append(batchResults, db.DailyQuizResult{
+				Date:          targetDate,
+				Scenario:      scenarioName,
+				HeroHand:      heroHand,
+				Flop:          flop,
+				Result:        string(villainEquitiesJSON),
+				AverageEquity: averageEquity,
+				GameType:      "4card_plo", // ゲームタイプを明示的に指定
+			})
+		}
+
+		// バッチ処理でPostgreSQLに保存
+		if len(batchResults) > 0 {
+			log.Printf("Starting batch insert of %d records to PostgreSQL", len(batchResults))
+			err = db.InsertDailyQuizResultsBatch(pgDB, batchResults)
 			if err != nil {
-				log.Printf("Error saving villain equities for scenario %s to PostgreSQL: %v", scenarioName, err)
+				log.Printf("Error in batch insert to PostgreSQL: %v", err)
 			} else {
-				log.Printf("Successfully saved villain equities for scenario %s as one record to PostgreSQL", scenarioName)
+				log.Printf("Successfully completed batch insert to PostgreSQL")
 			}
 		}
 

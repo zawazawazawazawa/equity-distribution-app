@@ -22,6 +22,17 @@ type PostgresConfig struct {
 	DBName   string
 }
 
+// DailyQuizResult はデイリークイズ結果を表す構造体です
+type DailyQuizResult struct {
+	Date          time.Time
+	Scenario      string
+	HeroHand      string
+	Flop          string
+	Result        string
+	AverageEquity float64
+	GameType      string
+}
+
 // GetPostgresConnection はPostgreSQLへの接続を確立します
 // 環境変数から接続情報を取得することもできます
 func GetPostgresConnection(config PostgresConfig) (*sql.DB, error) {
@@ -146,4 +157,47 @@ func GetDailyQuizResultsByDate(db *sql.DB, date time.Time) ([]map[string]interfa
 	}
 
 	return results, nil
+}
+
+// InsertDailyQuizResultsBatch は複数の計算結果を一括でPostgreSQLに保存します
+func InsertDailyQuizResultsBatch(db *sql.DB, results []DailyQuizResult) error {
+	if len(results) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// トランザクションを開始
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// バッチINSERT用のステートメントを準備
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO daily_quiz_results (date, scenario, hero_hand, flop, result, average_equity, game_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %v", err)
+	}
+	defer stmt.Close()
+
+	// 各レコードを挿入
+	for i, result := range results {
+		_, err = stmt.ExecContext(ctx, result.Date, result.Scenario, result.HeroHand, result.Flop, result.Result, result.AverageEquity, result.GameType)
+		if err != nil {
+			return fmt.Errorf("failed to insert record %d: %v", i+1, err)
+		}
+	}
+
+	// トランザクションをコミット
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	log.Printf("Successfully inserted %d records into PostgreSQL in batch", len(results))
+	return nil
 }
