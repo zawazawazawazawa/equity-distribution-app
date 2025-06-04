@@ -50,18 +50,18 @@ func GetPostgresConnection(config PostgresConfig) (*sql.DB, error) {
 }
 
 // InsertDailyQuizResult は計算結果をPostgreSQLに保存します
-func InsertDailyQuizResult(db *sql.DB, date time.Time, scenario string, heroHand string, flop string, result string, averageEquity float64) error {
+func InsertDailyQuizResult(db *sql.DB, date time.Time, scenario string, heroHand string, flop string, result string, averageEquity float64, gameType string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	query := `
-		INSERT INTO daily_quiz_results (date, scenario, hero_hand, flop, result, average_equity)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO daily_quiz_results (date, scenario, hero_hand, flop, result, average_equity, game_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
 	`
 
 	var id int
-	err := db.QueryRowContext(ctx, query, date, scenario, heroHand, flop, result, averageEquity).Scan(&id)
+	err := db.QueryRowContext(ctx, query, date, scenario, heroHand, flop, result, averageEquity, gameType).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("failed to insert data into PostgreSQL: %v", err)
 	}

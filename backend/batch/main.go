@@ -372,6 +372,7 @@ func main() {
 				flop,
 				string(villainEquitiesJSON), // VillainEquitiesの配列だけをJSON文字列として保存
 				averageEquity,
+				"4card_plo", // ゲームタイプを明示的に指定
 			)
 			if err != nil {
 				log.Printf("Error saving villain equities for scenario %s to PostgreSQL: %v", scenarioName, err)
