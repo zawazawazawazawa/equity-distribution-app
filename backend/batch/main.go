@@ -94,6 +94,10 @@ type BatchConfig struct {
 
 	// 画像アップロード設定
 	EnableImageUpload bool // 画像アップロードの有効/無効
+
+	// エクイティ計算設定
+	UseMonteCarloEquity bool   // Monte Carlo法を使用するか（false: exhaustive）
+	MonteCarloMode      string // Monte Carloの精度モード（FAST/NORMAL/ACCURATE）
 }
 
 func main() {
@@ -468,6 +472,10 @@ func parseFlags() *BatchConfig {
 	// 画像アップロード設定を環境変数から取得
 	enableImageUpload := getEnvBoolOrDefault("ENABLE_IMAGE_UPLOAD", true)
 
+	// エクイティ計算設定を環境変数から取得
+	useMonteCarloEquity := getEnvBoolOrDefault("USE_MONTE_CARLO_EQUITY", false)
+	monteCarloMode := getEnvOrDefault("MONTE_CARLO_MODE", "NORMAL")
+
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
 	flag.StringVar(&config.DataDir, "data", "data", "Directory containing preset data files")
 	flag.StringVar(&config.Date, "date", "", "Date for quiz in YYYY-MM-DD format (default: tomorrow)")
@@ -485,6 +493,10 @@ func parseFlags() *BatchConfig {
 
 	// 画像アップロード設定
 	flag.BoolVar(&config.EnableImageUpload, "image-upload", enableImageUpload, "Enable image generation and upload")
+
+	// エクイティ計算設定
+	flag.BoolVar(&config.UseMonteCarloEquity, "monte-carlo", useMonteCarloEquity, "Use Monte Carlo equity calculation instead of exhaustive")
+	flag.StringVar(&config.MonteCarloMode, "monte-carlo-mode", monteCarloMode, "Monte Carlo accuracy mode (FAST/NORMAL/ACCURATE)")
 
 	flag.Parse()
 
@@ -634,14 +646,30 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 		}
 	}
 
-	// 並列処理の設定に応じてequity計算を実行
-	if config.EnableParallelProcessing {
-		// 並列処理が有効な場合は並列計算関数を使用
-		return pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+	// Monte Carlo法を使用するかどうかで分岐
+	if config.UseMonteCarloEquity {
+		// Monte Carlo法を使用
+		if config.EnableParallelProcessing {
+			// 並列処理が有効な場合
+			log.Printf("Using Monte Carlo equity calculation (mode: %s) with parallel processing", config.MonteCarloMode)
+			return pkrlib.CalculateHandVsRangeEquityMonteCarloParallel(yourHand, formattedOpponentHands, flop)
+		} else {
+			// 並列処理が無効な場合（Monte Carlo版は常に並列なので同じ関数を使用）
+			log.Printf("Using Monte Carlo equity calculation (mode: %s)", config.MonteCarloMode)
+			return pkrlib.CalculateHandVsRangeEquityMonteCarloParallel(yourHand, formattedOpponentHands, flop)
+		}
 	} else {
-		// 並列処理が無効な場合は非並列計算関数を使用
-		// 注: pkrlib.CalculateHandVsRangeEquityという非並列版の関数が存在しない場合は、
-		// 並列版の関数を使用します
-		return pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+		// 従来のExhaustive法を使用
+		if config.EnableParallelProcessing {
+			// 並列処理が有効な場合は並列計算関数を使用
+			log.Printf("Using exhaustive equity calculation with parallel processing")
+			return pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+		} else {
+			// 並列処理が無効な場合は非並列計算関数を使用
+			// 注: pkrlib.CalculateHandVsRangeEquityという非並列版の関数が存在しない場合は、
+			// 並列版の関数を使用します
+			log.Printf("Using exhaustive equity calculation")
+			return pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+		}
 	}
 }
