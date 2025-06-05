@@ -13,6 +13,8 @@
 #   -u <ユーザー>    : PostgreSQLユーザー (デフォルト: postgres)
 #   -P <パスワード>  : PostgreSQLパスワード (デフォルト: postgres)
 #   -n <DB名>       : PostgreSQLデータベース名 (デフォルト: plo_equity)
+#   -M              : Monte Carloモードを有効にする
+#   -m <モード>     : Monte Carloの精度モード (FAST/NORMAL/ACCURATE、デフォルト: NORMAL)
 #   -h              : ヘルプを表示
 
 # 日付生成関数
@@ -40,9 +42,11 @@ POSTGRES_PORT=${POSTGRES_PORT:-5432}
 POSTGRES_USER=${POSTGRES_USER:-"postgres"}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-"postgres"}
 POSTGRES_DBNAME=${POSTGRES_DBNAME:-"plo_equity"}
+USE_MONTE_CARLO=false
+MONTE_CARLO_MODE="NORMAL"
 
 # コマンドライン引数の解析
-while getopts "l:d:D:N:H:p:u:P:n:h" opt; do
+while getopts "l:d:D:N:H:p:u:P:n:Mm:h" opt; do
   case $opt in
     l) LOG_FILE=$OPTARG ;;
     d) DATA_DIR=$OPTARG ;;
@@ -53,6 +57,8 @@ while getopts "l:d:D:N:H:p:u:P:n:h" opt; do
     u) POSTGRES_USER=$OPTARG ;;
     P) POSTGRES_PASSWORD=$OPTARG ;;
     n) POSTGRES_DBNAME=$OPTARG ;;
+    M) USE_MONTE_CARLO=true ;;
+    m) MONTE_CARLO_MODE=$OPTARG ;;
     h)
       echo "使用方法: $0 [オプション]"
       echo "オプション:"
@@ -65,6 +71,8 @@ while getopts "l:d:D:N:H:p:u:P:n:h" opt; do
       echo "  -u <ユーザー>    : PostgreSQLユーザー (デフォルト: postgres)"
       echo "  -P <パスワード>  : PostgreSQLパスワード (デフォルト: postgres)"
       echo "  -n <DB名>       : PostgreSQLデータベース名 (デフォルト: plo_equity)"
+      echo "  -M              : Monte Carloモードを有効にする"
+      echo "  -m <モード>     : Monte Carloの精度モード (FAST/NORMAL/ACCURATE、デフォルト: NORMAL)"
       echo "  -h              : ヘルプを表示"
       exit 0
       ;;
@@ -125,6 +133,10 @@ for ((i=0; i<DAYS_COUNT; i++)); do
   CMD_ARGS="$CMD_ARGS -pg-user $POSTGRES_USER"
   CMD_ARGS="$CMD_ARGS -pg-password $POSTGRES_PASSWORD"
   CMD_ARGS="$CMD_ARGS -pg-dbname $POSTGRES_DBNAME"
+  if [ "$USE_MONTE_CARLO" = "true" ]; then
+    CMD_ARGS="$CMD_ARGS -monte-carlo"
+  fi
+  CMD_ARGS="$CMD_ARGS -monte-carlo-mode $MONTE_CARLO_MODE"
   
   # バッチ処理の実行
   echo "$(date '+%Y-%m-%d %H:%M:%S') - 日付: $CURRENT_DATE の処理を開始します"
