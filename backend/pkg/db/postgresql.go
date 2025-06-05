@@ -4,10 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"equity-distribution-backend/pkg/utils"
 	"fmt"
 	"log"
-	"os"
-	"strconv"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -26,11 +25,11 @@ type PostgresConfig struct {
 // 環境変数から接続情報を取得することもできます
 func GetPostgresConnection(config PostgresConfig) (*sql.DB, error) {
 	// 環境変数から値を取得（設定されている場合）
-	host := getEnvOrDefault("POSTGRES_HOST", config.Host)
-	port := getEnvIntOrDefault("POSTGRES_PORT", config.Port)
-	user := getEnvOrDefault("POSTGRES_USER", config.User)
-	password := getEnvOrDefault("POSTGRES_PASSWORD", config.Password)
-	dbName := getEnvOrDefault("POSTGRES_DBNAME", config.DBName)
+	host := utils.GetEnvOrDefault("POSTGRES_HOST", config.Host)
+	port := utils.GetEnvIntOrDefault("POSTGRES_PORT", config.Port)
+	user := utils.GetEnvOrDefault("POSTGRES_USER", config.User)
+	password := utils.GetEnvOrDefault("POSTGRES_PASSWORD", config.Password)
+	dbName := utils.GetEnvOrDefault("POSTGRES_DBNAME", config.DBName)
 
 	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbName)
@@ -70,23 +69,6 @@ func InsertDailyQuizResult(db *sql.DB, date time.Time, scenario string, heroHand
 	return nil
 }
 
-// 環境変数から文字列値を取得するヘルパー関数
-func getEnvOrDefault(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
-}
-
-// 環境変数から整数値を取得するヘルパー関数
-func getEnvIntOrDefault(key string, defaultValue int) int {
-	if value, exists := os.LookupEnv(key); exists {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
-}
 
 // GetDailyQuizResultsByDate は指定された日付のクイズ結果を取得します
 func GetDailyQuizResultsByDate(db *sql.DB, date time.Time) ([]map[string]interface{}, error) {

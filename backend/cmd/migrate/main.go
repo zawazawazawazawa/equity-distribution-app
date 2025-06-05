@@ -1,6 +1,7 @@
 package main
 
 import (
+	"equity-distribution-backend/pkg/utils"
 	"fmt"
 	"log"
 	"os"
@@ -21,11 +22,11 @@ func main() {
 	command := os.Args[1]
 
 	// データベース接続情報を環境変数から取得
-	host := getEnvOrDefault("POSTGRES_HOST", "localhost")
-	port := getEnvIntOrDefault("POSTGRES_PORT", 5432)
-	user := getEnvOrDefault("POSTGRES_USER", "postgres")
-	password := getEnvOrDefault("POSTGRES_PASSWORD", "postgres")
-	dbName := getEnvOrDefault("POSTGRES_DBNAME", "plo_equity")
+	host := utils.GetEnvOrDefault("POSTGRES_HOST", "localhost")
+	port := utils.GetEnvIntOrDefault("POSTGRES_PORT", 5432)
+	user := utils.GetEnvOrDefault("POSTGRES_USER", "postgres")
+	password := utils.GetEnvOrDefault("POSTGRES_PASSWORD", "postgres")
+	dbName := utils.GetEnvOrDefault("POSTGRES_DBNAME", "plo_equity")
 
 	// データベース接続文字列を構築
 	databaseURL := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
@@ -142,20 +143,3 @@ func printUsage() {
 	fmt.Println("  POSTGRES_DBNAME   (default: plo_equity)")
 }
 
-// 環境変数から文字列値を取得するヘルパー関数
-func getEnvOrDefault(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
-}
-
-// 環境変数から整数値を取得するヘルパー関数
-func getEnvIntOrDefault(key string, defaultValue int) int {
-	if value, exists := os.LookupEnv(key); exists {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
-}

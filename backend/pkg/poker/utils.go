@@ -1,9 +1,6 @@
 package poker
 
 import (
-	"fmt"
-	"sort"
-
 	"github.com/chehsunliu/poker"
 )
 
@@ -16,12 +13,6 @@ func GenerateBoardString(board []poker.Card) string {
 	return boardStr
 }
 
-// GenerateHandCombination creates a unique combination key for the hands
-func GenerateHandCombination(heroHand string, villainHand string) string {
-	hands := []string{heroHand, villainHand}
-	sort.Strings(hands) // Sort alphabetically to ensure uniqueness
-	return fmt.Sprintf("%s_%s", hands[0], hands[1])
-}
 
 // HasCardDuplicates checks if there are any duplicate cards across all provided card arrays
 func HasCardDuplicates(cards ...[]poker.Card) bool {

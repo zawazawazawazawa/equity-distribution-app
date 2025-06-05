@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"equity-distribution-backend/pkg/utils"
 	"flag"
 	"fmt"
 	"log"
@@ -9,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -405,10 +405,10 @@ func main() {
 
 				// R2設定を取得
 				r2Config := storage.R2Config{
-					Endpoint:   getEnvOrDefault("R2_ENDPOINT", ""),
-					AccessKey:  getEnvOrDefault("R2_ACCESS_KEY", ""),
-					SecretKey:  getEnvOrDefault("R2_SECRET_KEY", ""),
-					BucketName: getEnvOrDefault("R2_BUCKET", ""),
+					Endpoint:   utils.GetEnvOrDefault("R2_ENDPOINT", ""),
+					AccessKey:  utils.GetEnvOrDefault("R2_ACCESS_KEY", ""),
+					SecretKey:  utils.GetEnvOrDefault("R2_SECRET_KEY", ""),
+					BucketName: utils.GetEnvOrDefault("R2_BUCKET", ""),
 				}
 
 				// R2クライアントを作成
@@ -446,18 +446,18 @@ func parseFlags() *BatchConfig {
 	config := &BatchConfig{}
 
 	// 環境変数からデフォルト値を取得
-	postgresHost := getEnvOrDefault("POSTGRES_HOST", "localhost")
-	postgresPort := getEnvIntOrDefault("POSTGRES_PORT", 5432)
-	postgresUser := getEnvOrDefault("POSTGRES_USER", "postgres")
-	postgresPassword := getEnvOrDefault("POSTGRES_PASSWORD", "postgres")
-	postgresDBName := getEnvOrDefault("POSTGRES_DBNAME", "plo_equity")
+	postgresHost := utils.GetEnvOrDefault("POSTGRES_HOST", "localhost")
+	postgresPort := utils.GetEnvIntOrDefault("POSTGRES_PORT", 5432)
+	postgresUser := utils.GetEnvOrDefault("POSTGRES_USER", "postgres")
+	postgresPassword := utils.GetEnvOrDefault("POSTGRES_PASSWORD", "postgres")
+	postgresDBName := utils.GetEnvOrDefault("POSTGRES_DBNAME", "plo_equity")
 
 	// 並列処理の設定を環境変数から取得
-	enableParallelProcessing := getEnvBoolOrDefault("ENABLE_PARALLEL_PROCESSING", true)
-	maxParallelJobs := getEnvIntOrDefault("MAX_PARALLEL_JOBS", runtime.NumCPU())
+	enableParallelProcessing := utils.GetEnvBoolOrDefault("ENABLE_PARALLEL_PROCESSING", true)
+	maxParallelJobs := utils.GetEnvIntOrDefault("MAX_PARALLEL_JOBS", runtime.NumCPU())
 
 	// 画像アップロード設定を環境変数から取得
-	enableImageUpload := getEnvBoolOrDefault("ENABLE_IMAGE_UPLOAD", true)
+	enableImageUpload := utils.GetEnvBoolOrDefault("ENABLE_IMAGE_UPLOAD", true)
 
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
 	flag.StringVar(&config.DataDir, "data", "data", "Directory containing preset data files")
@@ -482,33 +482,6 @@ func parseFlags() *BatchConfig {
 	return config
 }
 
-// 環境変数から文字列値を取得するヘルパー関数
-func getEnvOrDefault(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
-}
-
-// 環境変数から整数値を取得するヘルパー関数
-func getEnvIntOrDefault(key string, defaultValue int) int {
-	if value, exists := os.LookupEnv(key); exists {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
-}
-
-// 環境変数からブール値を取得するヘルパー関数
-func getEnvBoolOrDefault(key string, defaultValue bool) bool {
-	if value, exists := os.LookupEnv(key); exists {
-		if boolValue, err := strconv.ParseBool(value); err == nil {
-			return boolValue
-		}
-	}
-	return defaultValue
-}
 
 // ログの設定
 func setupLogging(logFile string) {
