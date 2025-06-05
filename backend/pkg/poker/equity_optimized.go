@@ -16,9 +16,9 @@ import (
 
 // 計算精度の設定
 const (
-	FAST_ITERATIONS     = 1000  // 高速モード: ±2%誤差
-	NORMAL_ITERATIONS   = 5000  // 通常モード: ±1%誤差
-	ACCURATE_ITERATIONS = 10000 // 高精度モード: ±0.5%誤差
+	FAST_ITERATIONS     = 1000  // 高速モード: ±3%誤差（95%信頼区間）
+	NORMAL_ITERATIONS   = 5000  // 通常モード: ±1.4%誤差（95%信頼区間）
+	ACCURATE_ITERATIONS = 10000 // 高精度モード: ±1%誤差（95%信頼区間）
 )
 
 // EquityCalculationConfig は計算設定を表します
