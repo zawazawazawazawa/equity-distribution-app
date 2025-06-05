@@ -59,7 +59,7 @@ func TestEquityCalculationPerformance(t *testing.T) {
 
 	t.Run("MonteCarlo", func(t *testing.T) {
 		start := time.Now()
-		result, err := CalculateHandVsRangeEquityMonteCarloParallel(yourHand, opponentHands, board)
+		result, err := CalculateHandVsRangeEquityMonteCarloParallel(yourHand, opponentHands, board, "NORMAL")
 		duration := time.Since(start)
 		
 		if err != nil {

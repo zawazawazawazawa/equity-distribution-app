@@ -203,20 +203,24 @@ func CalculateHandVsHandEquityAdaptive(yourHand []poker.Card, opponentHand []pok
 }
 
 // CalculateHandVsRangeEquityMonteCarloParallel はモンテカルロシミュレーションで並列equity計算を行います
-func CalculateHandVsRangeEquityMonteCarloParallel(yourHand []poker.Card, opponentHands [][]poker.Card, board []poker.Card) (map[string]float64, error) {
+func CalculateHandVsRangeEquityMonteCarloParallel(yourHand []poker.Card, opponentHands [][]poker.Card, board []poker.Card, mode string) (map[string]float64, error) {
 	equities := make(map[string]float64)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	// 動的にイテレーション数を調整
-	iterations := NORMAL_ITERATIONS
-	if len(opponentHands) > 100 {
-		iterations = FAST_ITERATIONS // 大量のハンドの場合は高速モード
+	// モードに基づいてイテレーション数を設定
+	var iterations int
+	switch mode {
+	case "FAST":
+		iterations = FAST_ITERATIONS
 		log.Printf("Using fast mode (%d iterations) for %d opponent hands", iterations, len(opponentHands))
-	} else if len(opponentHands) < 20 {
-		iterations = ACCURATE_ITERATIONS // 少数のハンドの場合は高精度モード
+	case "ACCURATE":
+		iterations = ACCURATE_ITERATIONS
 		log.Printf("Using accurate mode (%d iterations) for %d opponent hands", iterations, len(opponentHands))
-	} else {
+	case "NORMAL":
+		fallthrough
+	default:
+		iterations = NORMAL_ITERATIONS
 		log.Printf("Using normal mode (%d iterations) for %d opponent hands", iterations, len(opponentHands))
 	}
 

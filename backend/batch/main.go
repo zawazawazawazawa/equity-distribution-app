@@ -474,7 +474,7 @@ func parseFlags() *BatchConfig {
 
 	// エクイティ計算設定を環境変数から取得
 	useMonteCarloEquity := getEnvBoolOrDefault("USE_MONTE_CARLO_EQUITY", false)
-	monteCarloMode := getEnvOrDefault("MONTE_CARLO_MODE", "NORMAL")
+	monteCarloMode := getEnvOrDefault("MONTE_CARLO_MODE", "ACCURATE")
 
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
 	flag.StringVar(&config.DataDir, "data", "data", "Directory containing preset data files")
@@ -652,11 +652,11 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 		if config.EnableParallelProcessing {
 			// 並列処理が有効な場合
 			log.Printf("Using Monte Carlo equity calculation (mode: %s) with parallel processing", config.MonteCarloMode)
-			return pkrlib.CalculateHandVsRangeEquityMonteCarloParallel(yourHand, formattedOpponentHands, flop)
+			return pkrlib.CalculateHandVsRangeEquityMonteCarloParallel(yourHand, formattedOpponentHands, flop, config.MonteCarloMode)
 		} else {
 			// 並列処理が無効な場合（Monte Carlo版は常に並列なので同じ関数を使用）
 			log.Printf("Using Monte Carlo equity calculation (mode: %s)", config.MonteCarloMode)
-			return pkrlib.CalculateHandVsRangeEquityMonteCarloParallel(yourHand, formattedOpponentHands, flop)
+			return pkrlib.CalculateHandVsRangeEquityMonteCarloParallel(yourHand, formattedOpponentHands, flop, config.MonteCarloMode)
 		}
 	} else {
 		// 従来のExhaustive法を使用
