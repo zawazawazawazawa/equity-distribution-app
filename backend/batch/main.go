@@ -648,16 +648,55 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 
 	// Monte Carlo法を使用するかどうかで分岐
 	if config.UseMonteCarloEquity {
-		// Monte Carlo法を使用
-		if config.EnableParallelProcessing {
-			// 並列処理が有効な場合
-			log.Printf("Using Monte Carlo equity calculation (mode: %s) with parallel processing", config.MonteCarloMode)
-			return pkrlib.CalculateHandVsRangeEquityMonteCarloParallel(yourHand, formattedOpponentHands, flop, config.MonteCarloMode)
-		} else {
-			// 並列処理が無効な場合（Monte Carlo版は常に並列なので同じ関数を使用）
-			log.Printf("Using Monte Carlo equity calculation (mode: %s)", config.MonteCarloMode)
-			return pkrlib.CalculateHandVsRangeEquityMonteCarloParallel(yourHand, formattedOpponentHands, flop, config.MonteCarloMode)
+		// Monte Carlo法を使用（Adaptive版を使用）
+		log.Printf("Using Monte Carlo adaptive equity calculation (mode: %s)", config.MonteCarloMode)
+		
+		// Adaptive設定を作成
+		var adaptiveConfig pkrlib.EquityCalculationConfig
+		switch config.MonteCarloMode {
+		case "FAST":
+			adaptiveConfig = pkrlib.EquityCalculationConfig{
+				MaxIterations:    pkrlib.FAST_ITERATIONS,
+				TargetPrecision:  3.0, // ±3%誤差
+				MinIterations:    500,
+				ConvergenceCheck: 100,
+			}
+		case "ACCURATE":
+			adaptiveConfig = pkrlib.EquityCalculationConfig{
+				MaxIterations:    pkrlib.ACCURATE_ITERATIONS,
+				TargetPrecision:  0.5, // ±0.5%誤差
+				MinIterations:    2000,
+				ConvergenceCheck: 200,
+			}
+		case "NORMAL":
+			fallthrough
+		default:
+			adaptiveConfig = pkrlib.GetDefaultAdaptiveConfig()
 		}
+		
+		// 各相手ハンドに対してAdaptive計算を実行
+		equities := make(map[string]float64)
+		totalIterations := 0
+		
+		for _, opponentHand := range formattedOpponentHands {
+			if pkrlib.HasCardDuplicates(yourHand, opponentHand, flop) {
+				continue
+			}
+			
+			villainHandStr := ""
+			for _, card := range opponentHand {
+				villainHandStr += card.String()
+			}
+			
+			equity, iterations, err := pkrlib.CalculateHandVsHandEquityAdaptive(yourHand, opponentHand, flop, adaptiveConfig)
+			if err == nil && equity != -1 {
+				equities[villainHandStr] = equity
+				totalIterations += iterations
+			}
+		}
+		
+		log.Printf("Adaptive calculation completed with average %d iterations per hand", totalIterations/len(equities))
+		return equities, nil
 	} else {
 		// 従来のExhaustive法を使用
 		if config.EnableParallelProcessing {
