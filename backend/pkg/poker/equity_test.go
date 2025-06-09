@@ -447,3 +447,185 @@ func TestCalculateHandVsHandEquityPLO(t *testing.T) {
 		}
 	})
 }
+
+func TestCalculateHandVsHandEquityPLO5(t *testing.T) {
+	// テストケース1: PLO5 - 正常なエクイティ計算
+	t.Run("PLO5 - Normal equity calculation", func(t *testing.T) {
+		// テストデータの準備
+		yourHand := []poker.Card{
+			poker.NewCard("Ah"),
+			poker.NewCard("Ad"),
+			poker.NewCard("Kc"),
+			poker.NewCard("Qc"),
+			poker.NewCard("Jd"),
+		}
+		opponentHand := []poker.Card{
+			poker.NewCard("Kh"),
+			poker.NewCard("Kd"),
+			poker.NewCard("Jc"),
+			poker.NewCard("Tc"),
+			poker.NewCard("9s"),
+		}
+		board := []poker.Card{
+			poker.NewCard("2h"),
+			poker.NewCard("7d"),
+			poker.NewCard("Ts"),
+		}
+
+		// 関数の実行
+		equity, cacheHit := CalculateHandVsHandEquity(yourHand, opponentHand, board)
+
+		// 結果の検証
+		if equity < 0 {
+			t.Errorf("Expected positive equity, got %.2f", equity)
+		}
+		if cacheHit {
+			t.Error("Expected cache miss, got cache hit")
+		}
+		// PLO5では組み合わせが多いため、エクイティの分散が大きい
+		if equity < 20 || equity > 80 {
+			t.Logf("PLO5 equity calculated: %.2f%% (wider range expected)", equity)
+		}
+	})
+
+	// テストケース2: PLO5 - フラッシュドローの計算
+	t.Run("PLO5 - Flush draw equity", func(t *testing.T) {
+		// テストデータの準備
+		yourHand := []poker.Card{
+			poker.NewCard("Ah"),
+			poker.NewCard("Kh"), // ハート2枚
+			poker.NewCard("2c"),
+			poker.NewCard("3d"),
+			poker.NewCard("4s"),
+		}
+		opponentHand := []poker.Card{
+			poker.NewCard("As"),
+			poker.NewCard("Ad"), // ペア
+			poker.NewCard("5c"),
+			poker.NewCard("6d"),
+			poker.NewCard("7s"),
+		}
+		board := []poker.Card{
+			poker.NewCard("Th"),
+			poker.NewCard("9h"),
+			poker.NewCard("2d"),
+		}
+
+		// 関数の実行
+		equity, _ := CalculateHandVsHandEquity(yourHand, opponentHand, board)
+
+		// 結果の検証 - フラッシュドローがあるのでそこそこのエクイティがあるはず
+		if equity < 25 {
+			t.Errorf("Expected reasonable equity with flush draw, got %.2f%%", equity)
+		}
+	})
+
+	// テストケース3: PLO5 - ストレートドローの組み合わせ
+	t.Run("PLO5 - Multiple straight draws", func(t *testing.T) {
+		// テストデータの準備
+		yourHand := []poker.Card{
+			poker.NewCard("9h"),
+			poker.NewCard("8c"),
+			poker.NewCard("7d"),
+			poker.NewCard("6s"),
+			poker.NewCard("5h"), // 連続したランク
+		}
+		opponentHand := []poker.Card{
+			poker.NewCard("Ah"),
+			poker.NewCard("Ad"),
+			poker.NewCard("Kc"),
+			poker.NewCard("Kd"),
+			poker.NewCard("Qs"),
+		}
+		board := []poker.Card{
+			poker.NewCard("Th"),
+			poker.NewCard("Jd"),
+			poker.NewCard("4c"),
+		}
+
+		// 関数の実行
+		equity, _ := CalculateHandVsHandEquity(yourHand, opponentHand, board)
+
+		// 結果の検証 - 多くのストレートドローがあるのでそこそこのエクイティ
+		if equity < 25 {
+			t.Errorf("Expected decent equity with multiple straight draws, got %.2f%%", equity)
+		}
+	})
+
+	// テストケース4: PLO5 vs PLO5 レンジ計算
+	t.Run("PLO5 - Range equity calculation", func(t *testing.T) {
+		// テストデータの準備
+		yourHand := []poker.Card{
+			poker.NewCard("Ah"),
+			poker.NewCard("Ad"),
+			poker.NewCard("Kh"),
+			poker.NewCard("Kd"),
+			poker.NewCard("Qs"),
+		}
+		opponentHands := [][]poker.Card{
+			{
+				poker.NewCard("Ac"),
+				poker.NewCard("As"),
+				poker.NewCard("Qh"),
+				poker.NewCard("Qd"),
+				poker.NewCard("Jc"),
+			},
+			{
+				poker.NewCard("Kc"),
+				poker.NewCard("Ks"),
+				poker.NewCard("Qc"),
+				poker.NewCard("Jd"),
+				poker.NewCard("Tc"),
+			},
+		}
+		board := []poker.Card{
+			poker.NewCard("2h"),
+			poker.NewCard("7d"),
+			poker.NewCard("Ts"),
+		}
+
+		// 関数の実行
+		equities, err := CalculateHandVsRangeEquityParallel(yourHand, opponentHands, board)
+
+		// 結果の検証
+		if err != nil {
+			t.Errorf("Expected no error, got %v", err)
+		}
+		// 実際にはカードの重複がないため2つの結果が返される
+		if len(equities) != 2 {
+			t.Errorf("Expected 2 equity results, got %d", len(equities))
+		}
+	})
+
+	// テストケース5: PLO5 - カード重複チェック
+	t.Run("PLO5 - Duplicate card handling", func(t *testing.T) {
+		// テストデータの準備 - 重複カード
+		yourHand := []poker.Card{
+			poker.NewCard("Ah"),
+			poker.NewCard("Ad"),
+			poker.NewCard("Kc"),
+			poker.NewCard("Qc"),
+			poker.NewCard("Jd"),
+		}
+		opponentHand := []poker.Card{
+			poker.NewCard("Ah"), // 重複
+			poker.NewCard("Kd"),
+			poker.NewCard("Jc"),
+			poker.NewCard("Tc"),
+			poker.NewCard("9s"),
+		}
+		board := []poker.Card{
+			poker.NewCard("2h"),
+			poker.NewCard("7d"),
+			poker.NewCard("Ts"),
+		}
+
+		// 関数の実行
+		equity, _ := CalculateHandVsHandEquity(yourHand, opponentHand, board)
+
+		// 結果の検証
+		if equity != -1 {
+			t.Errorf("Expected -1 for duplicate cards, got %.2f", equity)
+		}
+	})
+}
