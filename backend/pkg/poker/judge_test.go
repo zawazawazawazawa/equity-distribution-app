@@ -304,3 +304,175 @@ func TestJudgeWinnerPLO(t *testing.T) {
 		}
 	})
 }
+
+func TestJudgeWinnerPLO5(t *testing.T) {
+	// テストケース1: PLO5 - 正常なフラッシュ vs フラッシュ
+	t.Run("PLO5 - Valid flush vs flush", func(t *testing.T) {
+		// テストデータの準備
+		yourHand := []poker.Card{
+			poker.NewCard("Ah"),
+			poker.NewCard("Kh"), // ハートが2枚
+			poker.NewCard("2c"),
+			poker.NewCard("3d"),
+			poker.NewCard("4s"),
+		}
+		opponentHand := []poker.Card{
+			poker.NewCard("Qh"),
+			poker.NewCard("Jh"), // ハートが2枚
+			poker.NewCard("5c"),
+			poker.NewCard("6d"),
+			poker.NewCard("7s"),
+		}
+		board := []poker.Card{
+			poker.NewCard("Th"),
+			poker.NewCard("9h"),
+			poker.NewCard("8h"),
+			poker.NewCard("7c"),
+			poker.NewCard("6c"),
+		}
+
+		// 関数の実行
+		result := JudgeWinnerPLO5(yourHand, opponentHand, board)
+
+		// 結果の検証 - opponentHandがストレートフラッシュで勝つべき
+		if result != "opponentHand" {
+			t.Errorf("Expected 'opponentHand' to win with straight flush, got %s", result)
+		}
+	})
+
+	// テストケース2: PLO5 - Auto-detect 5 card hands
+	t.Run("PLO5 - Auto detect 5 card hands", func(t *testing.T) {
+		// テストデータの準備
+		yourHand := []poker.Card{
+			poker.NewCard("Ah"),
+			poker.NewCard("Ad"),
+			poker.NewCard("Kh"),
+			poker.NewCard("Kd"),
+			poker.NewCard("Qs"),
+		}
+		opponentHand := []poker.Card{
+			poker.NewCard("2h"),
+			poker.NewCard("3h"),
+			poker.NewCard("4c"),
+			poker.NewCard("5d"),
+			poker.NewCard("6s"),
+		}
+		board := []poker.Card{
+			poker.NewCard("Ac"),
+			poker.NewCard("Ks"),
+			poker.NewCard("Qc"),
+			poker.NewCard("Jd"),
+			poker.NewCard("Th"),
+		}
+
+		// 関数の実行
+		result := JudgeWinner(yourHand, opponentHand, board)
+
+		// 結果の検証 - yourHandがフルハウスで勝つべき
+		if result != "yourHand" {
+			t.Errorf("Expected 'yourHand' to win with full house, got %s", result)
+		}
+	})
+
+	// テストケース3: PLO5 - より多くの組み合わせからベストハンドを選択
+	t.Run("PLO5 - More combinations test", func(t *testing.T) {
+		// テストデータの準備
+		yourHand := []poker.Card{
+			poker.NewCard("9h"),
+			poker.NewCard("8h"),
+			poker.NewCard("7h"),
+			poker.NewCard("6h"),
+			poker.NewCard("5h"), // ストレートフラッシュ可能
+		}
+		opponentHand := []poker.Card{
+			poker.NewCard("Ah"),
+			poker.NewCard("Ad"),
+			poker.NewCard("As"),
+			poker.NewCard("Kc"),
+			poker.NewCard("Kd"), // スリーカード可能
+		}
+		board := []poker.Card{
+			poker.NewCard("Ac"),
+			poker.NewCard("Kh"),
+			poker.NewCard("Qd"),
+			poker.NewCard("Jh"),
+			poker.NewCard("Th"),
+		}
+
+		// 関数の実行
+		result := JudgeWinnerPLO5(yourHand, opponentHand, board)
+
+		// 結果の検証 - yourHandがストレートフラッシュで勝つべき
+		if result != "yourHand" {
+			t.Errorf("Expected 'yourHand' to win with straight flush, got %s", result)
+		}
+	})
+
+	// テストケース4: PLO5 - 1枚フラッシュの防止テスト
+	t.Run("PLO5 - Prevent one-card flush", func(t *testing.T) {
+		// テストデータの準備
+		yourHand := []poker.Card{
+			poker.NewCard("Ah"), // ハートは1枚のみ
+			poker.NewCard("2c"),
+			poker.NewCard("3d"),
+			poker.NewCard("4s"),
+			poker.NewCard("5c"),
+		}
+		opponentHand := []poker.Card{
+			poker.NewCard("Kh"),
+			poker.NewCard("Qh"), // ハートが2枚
+			poker.NewCard("6c"),
+			poker.NewCard("7d"),
+			poker.NewCard("8s"),
+		}
+		board := []poker.Card{
+			poker.NewCard("Jh"),
+			poker.NewCard("Th"),
+			poker.NewCard("9h"),
+			poker.NewCard("8h"),
+			poker.NewCard("7c"),
+		}
+
+		// 関数の実行
+		result := JudgeWinnerPLO5(yourHand, opponentHand, board)
+
+		// 結果の検証 - opponentHandがフラッシュで勝つべき
+		if result != "opponentHand" {
+			t.Errorf("Expected 'opponentHand' to win with flush, got %s", result)
+		}
+	})
+
+	// テストケース5: PLO5 - タイの判定
+	t.Run("PLO5 - Tie game", func(t *testing.T) {
+		// テストデータの準備
+		yourHand := []poker.Card{
+			poker.NewCard("Ah"),
+			poker.NewCard("Kd"),
+			poker.NewCard("2c"),
+			poker.NewCard("3s"),
+			poker.NewCard("4h"),
+		}
+		opponentHand := []poker.Card{
+			poker.NewCard("Ad"),
+			poker.NewCard("Kh"),
+			poker.NewCard("5c"),
+			poker.NewCard("6s"),
+			poker.NewCard("7h"),
+		}
+		board := []poker.Card{
+			poker.NewCard("Qc"),
+			poker.NewCard("Jd"),
+			poker.NewCard("Ts"),
+			poker.NewCard("9h"),
+			poker.NewCard("8c"),
+		}
+
+		// 関数の実行
+		result := JudgeWinnerPLO5(yourHand, opponentHand, board)
+
+		// 結果の検証 - 両方ともA-Kでストレートなのでタイ
+		if result != "tie" {
+			t.Errorf("Expected 'tie', got %s", result)
+		}
+	})
+}
