@@ -64,6 +64,36 @@ var scenarios = []Scenario{
 		PresetName:  "3BP BTN call vs BB 3bet",
 		Description: "3ベットポット: BTNがBBの3ベットに対してコール",
 	},
+	{
+		Name:        "PLO5 SRP UTG vs BB",
+		PresetName:  "PLO5 SRP BB call vs UTG open",
+		Description: "5-card PLO シングルレイズポット: BBがUTGオープンに対してコール",
+	},
+	{
+		Name:        "PLO5 SRP BTN vs BB",
+		PresetName:  "PLO5 SRP BB call vs BTN open",
+		Description: "5-card PLO シングルレイズポット: BBがBTNオープンに対してコール",
+	},
+	{
+		Name:        "PLO5 SRP UTG vs BTN",
+		PresetName:  "PLO5 SRP BTN call vs UTG open",
+		Description: "5-card PLO シングルレイズポット: BTNがUTGオープンに対してコール",
+	},
+	{
+		Name:        "PLO5 3BP BB vs UTG",
+		PresetName:  "PLO5 3BP UTG call vs BB 3bet",
+		Description: "5-card PLO 3ベットポット: UTGがBBの3ベットに対してコール",
+	},
+	{
+		Name:        "PLO5 3BP BTN vs UTG",
+		PresetName:  "PLO5 3BP UTG call vs BTN 3bet",
+		Description: "5-card PLO 3ベットポット: UTGがBTNの3ベットに対してコール",
+	},
+	{
+		Name:        "PLO5 3BP BB vs BTN",
+		PresetName:  "PLO5 3BP BTN call vs BB 3bet",
+		Description: "5-card PLO 3ベットポット: BTNがBBの3ベットに対してコール",
+	},
 }
 
 // EquityResult は1つのシナリオの計算結果を表します
@@ -370,6 +400,12 @@ func main() {
 			// 平均エクイティはすべての結果の平均を使用
 			averageEquity := totalEquity / float64(len(scenarioResultList))
 
+			// ゲームタイプの判定
+			gameType := "4card_plo"
+			if len(heroHand) == 10 {
+				gameType = "5card_plo"
+			}
+
 			// バッチ用データに追加
 			batchResults = append(batchResults, db.DailyQuizResult{
 				Date:          targetDate,
@@ -378,7 +414,7 @@ func main() {
 				Flop:          flop,
 				Result:        string(villainEquitiesJSON),
 				AverageEquity: averageEquity,
-				GameType:      "4card_plo", // ゲームタイプを明示的に指定
+				GameType:      gameType,
 			})
 		}
 
@@ -571,8 +607,14 @@ func generateHandsAndFlop(scenario Scenario, config *BatchConfig) (string, strin
 	// heroHandに含まれるカードは除外して、flopをランダムに生成
 	// ヒーローハンドをpoker.Card形式に変換
 	var heroCards []poker.Card
-	if len(heroHand) == 8 { // PLOハンド（4枚）
+	if len(heroHand) == 8 { // 4-card PLOハンド（4枚）
 		for j := 0; j < 8; j += 2 {
+			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
+			card := poker.NewCard(cardStr)
+			heroCards = append(heroCards, card)
+		}
+	} else if len(heroHand) == 10 { // 5-card PLOハンド（5枚）
+		for j := 0; j < 10; j += 2 {
 			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
 			card := poker.NewCard(cardStr)
 			heroCards = append(heroCards, card)
@@ -620,8 +662,14 @@ func generateHandsAndFlop(scenario Scenario, config *BatchConfig) (string, strin
 func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, config *BatchConfig) (map[string]float64, error) {
 	// ヒーローハンドをpoker.Card形式に変換
 	var yourHand []poker.Card
-	if len(heroHand) == 8 {
+	if len(heroHand) == 8 { // 4-card PLO
 		for j := 0; j < 8; j += 2 {
+			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
+			tempCard := poker.NewCard(cardStr)
+			yourHand = append(yourHand, tempCard)
+		}
+	} else if len(heroHand) == 10 { // 5-card PLO
+		for j := 0; j < 10; j += 2 {
 			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
 			tempCard := poker.NewCard(cardStr)
 			yourHand = append(yourHand, tempCard)
@@ -636,8 +684,15 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 	for _, hand := range opponentHands {
 		tmpHand := strings.Split(hand, "@")[0]
 		var tempArray []poker.Card
-		if len(tmpHand) == 8 {
+		if len(tmpHand) == 8 { // 4-card PLO
 			for j := 0; j < 8; j += 2 {
+				cardStr := strings.ToUpper(tmpHand[j:j+1]) + strings.ToLower(tmpHand[j+1:j+2])
+				tempCard := poker.NewCard(cardStr)
+				tempArray = append(tempArray, tempCard)
+			}
+			formattedOpponentHands = append(formattedOpponentHands, tempArray)
+		} else if len(tmpHand) == 10 { // 5-card PLO
+			for j := 0; j < 10; j += 2 {
 				cardStr := strings.ToUpper(tmpHand[j:j+1]) + strings.ToLower(tmpHand[j+1:j+2])
 				tempCard := poker.NewCard(cardStr)
 				tempArray = append(tempArray, tempCard)
