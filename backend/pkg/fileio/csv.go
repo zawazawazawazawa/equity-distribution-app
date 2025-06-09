@@ -53,21 +53,30 @@ func LoadRangeFromCSV(filePath string) (string, error) {
 // LoadOpponentRangeFromPreset loads opponent range from CSV file based on preset name
 func LoadOpponentRangeFromPreset(preset string, dataDir string) (string, error) {
 	var filePath string
-	baseDir := fmt.Sprintf("%s/six_handed_100bb_midrake", dataDir)
+	var gameType string
+	
+	// プリセット名からゲームタイプを判定
+	if strings.HasPrefix(preset, "PLO5") {
+		gameType = "plo5"
+	} else {
+		gameType = "plo4"
+	}
+	
+	baseDir := fmt.Sprintf("%s/%s/six_handed_100bb_midrake", dataDir, gameType)
 
 	// プリセット値に基づいてファイルパスを決定
 	switch preset {
-	case "SRP BB call vs UTG open":
+	case "SRP BB call vs UTG open", "PLO5 SRP BB call vs UTG open":
 		filePath = fmt.Sprintf("%s/srp/bb_call_vs_utg.csv", baseDir)
-	case "SRP BB call vs BTN open":
+	case "SRP BB call vs BTN open", "PLO5 SRP BB call vs BTN open":
 		filePath = fmt.Sprintf("%s/srp/bb_call_vs_btn.csv", baseDir)
-	case "SRP BTN call vs UTG open":
+	case "SRP BTN call vs UTG open", "PLO5 SRP BTN call vs UTG open":
 		filePath = fmt.Sprintf("%s/srp/btn_call_vs_utg.csv", baseDir)
-	case "3BP UTG call vs BB 3bet":
+	case "3BP UTG call vs BB 3bet", "PLO5 3BP UTG call vs BB 3bet":
 		filePath = fmt.Sprintf("%s/3bp/utg_call_vs_bb.csv", baseDir)
-	case "3BP UTG call vs BTN 3bet":
+	case "3BP UTG call vs BTN 3bet", "PLO5 3BP UTG call vs BTN 3bet":
 		filePath = fmt.Sprintf("%s/3bp/utg_call_vs_btn.csv", baseDir)
-	case "3BP BTN call vs BB 3bet":
+	case "3BP BTN call vs BB 3bet", "PLO5 3BP BTN call vs BB 3bet":
 		filePath = fmt.Sprintf("%s/3bp/btn_call_vs_bb.csv", baseDir)
 	default:
 		return "", fmt.Errorf("unknown preset: %s", preset)
@@ -79,21 +88,30 @@ func LoadOpponentRangeFromPreset(preset string, dataDir string) (string, error) 
 // LoadAggressorRangeFromPreset loads aggressor range from CSV file based on preset name
 func LoadAggressorRangeFromPreset(preset string, dataDir string) (string, error) {
 	var filePath string
-	baseDir := fmt.Sprintf("%s/six_handed_100bb_midrake", dataDir)
+	var gameType string
+	
+	// プリセット名からゲームタイプを判定
+	if strings.HasPrefix(preset, "PLO5") {
+		gameType = "plo5"
+	} else {
+		gameType = "plo4"
+	}
+	
+	baseDir := fmt.Sprintf("%s/%s/six_handed_100bb_midrake", dataDir, gameType)
 
 	// プリセット値に基づいてアグレッサー側のレンジファイルパスを決定
 	switch preset {
-	case "SRP BB call vs UTG open":
+	case "SRP BB call vs UTG open", "PLO5 SRP BB call vs UTG open":
 		filePath = fmt.Sprintf("%s/srp/utg_open.csv", baseDir) // UTGがアグレッサー
-	case "SRP BB call vs BTN open":
+	case "SRP BB call vs BTN open", "PLO5 SRP BB call vs BTN open":
 		filePath = fmt.Sprintf("%s/srp/btn_open.csv", baseDir) // BTNがアグレッサー
-	case "SRP BTN call vs UTG open":
+	case "SRP BTN call vs UTG open", "PLO5 SRP BTN call vs UTG open":
 		filePath = fmt.Sprintf("%s/srp/utg_open.csv", baseDir) // UTGがアグレッサー
-	case "3BP UTG call vs BB 3bet":
+	case "3BP UTG call vs BB 3bet", "PLO5 3BP UTG call vs BB 3bet":
 		filePath = fmt.Sprintf("%s/3bp/bb_3b_vs_utg.csv", baseDir) // BBがアグレッサー
-	case "3BP UTG call vs BTN 3bet":
+	case "3BP UTG call vs BTN 3bet", "PLO5 3BP UTG call vs BTN 3bet":
 		filePath = fmt.Sprintf("%s/3bp/btn_3b_vs_utg.csv", baseDir) // BTNがアグレッサー
-	case "3BP BTN call vs BB 3bet":
+	case "3BP BTN call vs BB 3bet", "PLO5 3BP BTN call vs BB 3bet":
 		filePath = fmt.Sprintf("%s/3bp/bb_3b_vs_btn.csv", baseDir) // BBがアグレッサー
 	default:
 		return "", fmt.Errorf("unknown preset: %s", preset)
