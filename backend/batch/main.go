@@ -439,7 +439,13 @@ func main() {
 		// 1問目のシナリオを使用して画像生成
 		if len(results) > 0 {
 			firstResult := results[0]
-			imagePath := filepath.Join("images/daily-quiz", targetDate.Format("2006-01-02")+".png")
+			
+			// ゲームタイプを判定
+			gameTypeDir := "4card"
+			if len(firstResult.HeroHand) == 10 {
+				gameTypeDir = "5card"
+			}
+			imagePath := filepath.Join("images/daily-quiz", gameTypeDir, targetDate.Format("2006-01-02")+".png")
 
 			err := image.GenerateDailyQuizImage(
 				targetDate,
@@ -465,8 +471,8 @@ func main() {
 				if err != nil {
 					log.Printf("Error creating R2 client: %v", err)
 				} else {
-					// 画像をR2にアップロード
-					objectKey := "daily-quiz/" + targetDate.Format("2006-01-02") + ".png"
+					// 画像をR2にアップロード（パスも4card/5cardで分ける）
+					objectKey := "daily-quiz/" + gameTypeDir + "/" + targetDate.Format("2006-01-02") + ".png"
 					err = storage.UploadImageToR2(r2Client, r2Config.BucketName, imagePath, objectKey)
 					if err != nil {
 						log.Printf("Error uploading image to R2: %v", err)
