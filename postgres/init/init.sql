@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS daily_quiz_results (
     flop VARCHAR(255) NOT NULL,
     result TEXT,
     average_equity DECIMAL(5,2),
+    game_type VARCHAR(20) NOT NULL DEFAULT '4card_plo',
+    sampling_count INTEGER DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -15,3 +17,5 @@ CREATE INDEX IF NOT EXISTS idx_daily_quiz_results_date ON daily_quiz_results(dat
 CREATE INDEX IF NOT EXISTS idx_daily_quiz_results_scenario ON daily_quiz_results(scenario);
 CREATE INDEX IF NOT EXISTS idx_daily_quiz_results_hero_hand ON daily_quiz_results(hero_hand);
 CREATE INDEX IF NOT EXISTS idx_daily_quiz_results_flop ON daily_quiz_results(flop);
+CREATE INDEX IF NOT EXISTS idx_daily_quiz_results_game_type ON daily_quiz_results(game_type);
+CREATE INDEX IF NOT EXISTS idx_daily_quiz_results_sampling_count ON daily_quiz_results(sampling_count);
