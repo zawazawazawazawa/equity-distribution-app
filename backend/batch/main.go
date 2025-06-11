@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/chehsunliu/poker"
 	"github.com/joho/godotenv"
 
@@ -22,6 +24,13 @@ import (
 	"equity-distribution-backend/pkg/image"
 	pkrlib "equity-distribution-backend/pkg/poker"
 	"equity-distribution-backend/pkg/storage"
+)
+
+// Constants for hand lengths
+const (
+	FOUR_CARD_PLO_LENGTH = 8  // 4 cards * 2 chars each
+	FIVE_CARD_PLO_LENGTH = 10 // 5 cards * 2 chars each
+	FLOP_SIZE            = 3  // Number of cards in the flop
 )
 
 // シナリオ定義
@@ -188,246 +197,15 @@ func main() {
 	// existingResultsが空でない場合は、すでにデータが存在するため、existingResultsをresultsに変換して代入
 	if len(existingResults) > 0 {
 		log.Printf("Data for %s already exists in the database. Skipping processing.", targetDate.Format("2006-01-02"))
-
-		// []map[string]interface{}から[]EquityResultに変換
-		for _, result := range existingResults {
-			scenarioName, _ := result["scenario"].(string)
-			heroHand, _ := result["hero_hand"].(string)
-			flopStr, _ := result["flop"].(string) // フロップ文字列を取得
-			averageEquity, _ := result["average_equity"].(float64)
-
-			// シナリオの検索
-			var foundScenario Scenario
-			for _, s := range scenarios {
-				if s.Name == scenarioName {
-					foundScenario = s
-					break
-				}
-			}
-
-			// フロップの文字列をpoker.Card配列に変換
-			var flopCards []poker.Card
-			if flopStr != "" {
-				// フロップ文字列は "2d3cJc" のような形式と仮定
-				// 2文字ずつ（数字+スート）で分割して処理
-				for i := 0; i < len(flopStr); i += 2 {
-					if i+2 <= len(flopStr) {
-						cardStr := strings.ToUpper(flopStr[i:i+1]) + strings.ToLower(flopStr[i+1:i+2])
-						card := poker.NewCard(cardStr)
-						flopCards = append(flopCards, card)
-					}
-				}
-				log.Printf("Using flop cards: %s", pkrlib.GenerateBoardString(flopCards))
-			} else {
-				log.Printf("Warning: No flop data found for date %s", targetDate.Format("2006-01-02"))
-			}
-
-			// Equitiesマップの作成（データベースから取得したデータに基づく）
-			equities := make(map[string]float64)
-
-			results = append(results, EquityResult{
-				Scenario:      foundScenario,
-				HeroHand:      heroHand,
-				Flop:          flopCards,
-				Equities:      equities,
-				AverageEquity: averageEquity,
-			})
-		}
+		results = convertExistingResultsToEquityResults(existingResults, targetDate)
 	} else {
 		// 計算処理に進む
-		if config.EnableParallelProcessing {
-			// 並列処理が有効な場合
-			maxJobs := config.MaxParallelJobs
-			log.Printf("Starting parallel processing for %d scenarios using %d jobs", len(scenarios), maxJobs)
+		results = processScenarios(config)
 
-			// 同時実行数を制限するセマフォ
-			semaphore := make(chan struct{}, maxJobs)
-			var wg sync.WaitGroup
-
-			// 結果を収集するためのチャネル
-			resultChan := make(chan EquityResult, len(scenarios))
-
-			// 各シナリオを並列で実行
-			for i, scenario := range scenarios {
-				wg.Add(1)
-				semaphore <- struct{}{} // セマフォを取得
-
-				// シナリオ処理をgoroutineで実行
-				go func(index int, currentScenario Scenario) {
-					defer wg.Done()
-					defer func() { <-semaphore }() // セマフォを解放
-
-					log.Printf("Starting scenario %d: %s", index+1, currentScenario.Name)
-					log.Printf("Selected scenario: %s", currentScenario.Name)
-
-					// シナリオに基づいてハンドとフロップを生成
-					heroHand, opponentRange, flop := generateHandsAndFlop(currentScenario, config)
-
-					// equity計算
-					equities, _, err := calculateEquity(heroHand, opponentRange, flop, config)
-					if err != nil {
-						log.Printf("Error calculating equity: %v", err)
-						log.Printf("Scenario %d failed: %v", index+1, err)
-						return
-					}
-
-					// 平均エクイティの計算
-					var totalEquity float64
-					for _, equity := range equities {
-						totalEquity += equity
-					}
-					averageEquity := totalEquity / float64(len(equities))
-
-					// 結果をチャネルに送信
-					resultChan <- EquityResult{
-						Scenario:      currentScenario,
-						HeroHand:      heroHand,
-						Flop:          flop,
-						Equities:      equities,
-						AverageEquity: averageEquity,
-					}
-
-					log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
-						index+1, currentScenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
-				}(i, scenario)
-			}
-
-			// すべてのgoroutineが完了するのを待つ
-			go func() {
-				wg.Wait()
-				close(resultChan)
-			}()
-
-			// 結果を収集
-			for result := range resultChan {
-				results = append(results, result)
-			}
-		} else {
-			// 並列処理が無効な場合（シーケンシャル処理）
-			log.Printf("Starting sequential processing for %d scenarios", len(scenarios))
-
-			// 各シナリオを順次実行
-			for i, scenario := range scenarios {
-				log.Printf("Starting scenario %d: %s", i+1, scenario.Name)
-				log.Printf("Selected scenario: %s", scenario.Name)
-
-				// シナリオに基づいてハンドとフロップを生成
-				heroHand, opponentRange, flop := generateHandsAndFlop(scenario, config)
-
-				// equity計算
-				equities, _, err := calculateEquity(heroHand, opponentRange, flop, config)
-				if err != nil {
-					log.Printf("Error calculating equity: %v", err)
-					log.Printf("Scenario %d failed: %v", i+1, err)
-					continue
-				}
-
-				// 平均エクイティの計算
-				var totalEquity float64
-				for _, equity := range equities {
-					totalEquity += equity
-				}
-				averageEquity := totalEquity / float64(len(equities))
-
-				// 結果を追加
-				results = append(results, EquityResult{
-					Scenario:      scenario,
-					HeroHand:      heroHand,
-					Flop:          flop,
-					Equities:      equities,
-					AverageEquity: averageEquity,
-				})
-
-				log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
-					i+1, scenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
-			}
-		}
-
-		// バッチ処理用のデータを準備
-		var batchResults []db.DailyQuizResult
-
-		// 結果をシナリオごとにグループ化
-		scenarioResults := make(map[string][]EquityResult)
-		for _, result := range results {
-			scenarioName := result.Scenario.Name
-			scenarioResults[scenarioName] = append(scenarioResults[scenarioName], result)
-		}
-
-		// 各シナリオごとにバッチ用データを作成
-		for scenarioName, scenarioResultList := range scenarioResults {
-			if len(scenarioResultList) == 0 {
-				continue
-			}
-
-			// VillainEquity構造体を定義
-			type VillainEquity struct {
-				VillainHand string  `json:"villain_hand"`
-				Equity      float64 `json:"equity"`
-			}
-
-			// このシナリオのすべての結果から対戦相手のハンドとエクイティの配列を作成
-			allVillainEquities := []VillainEquity{}
-
-			// 平均エクイティの計算用
-			totalEquity := 0.0
-
-			// 最初の結果からheroHandとflopを取得（代表値として）
-			var heroHand string
-			var flop string
-			if len(scenarioResultList) > 0 {
-				heroHand = scenarioResultList[0].HeroHand
-				flop = pkrlib.GenerateBoardString(scenarioResultList[0].Flop)
-			}
-
-			for _, result := range scenarioResultList {
-				// Equitiesマップを配列に変換して追加
-				for villainHand, equity := range result.Equities {
-					allVillainEquities = append(allVillainEquities, VillainEquity{
-						VillainHand: villainHand,
-						Equity:      equity,
-					})
-				}
-
-				totalEquity += result.AverageEquity
-			}
-
-			// VillainEquities配列をJSON文字列に変換
-			villainEquitiesJSON, err := json.Marshal(allVillainEquities)
-			if err != nil {
-				log.Printf("Error marshaling villain equities for scenario %s to JSON: %v", scenarioName, err)
-				continue
-			}
-
-			// 平均エクイティはすべての結果の平均を使用
-			averageEquity := totalEquity / float64(len(scenarioResultList))
-
-			// ゲームタイプの判定
-			gameType := "4card_plo"
-			if len(heroHand) == 10 {
-				gameType = "5card_plo"
-			}
-
-			// バッチ用データに追加
-			batchResults = append(batchResults, db.DailyQuizResult{
-				Date:          targetDate,
-				Scenario:      scenarioName,
-				HeroHand:      heroHand,
-				Flop:          flop,
-				Result:        string(villainEquitiesJSON),
-				AverageEquity: averageEquity,
-				GameType:      gameType,
-			})
-		}
-
-		// バッチ処理でPostgreSQLに保存
-		if len(batchResults) > 0 {
-			log.Printf("Starting batch insert of %d records to PostgreSQL", len(batchResults))
-			err = db.InsertDailyQuizResultsBatch(pgDB, batchResults)
-			if err != nil {
-				log.Printf("Error in batch insert to PostgreSQL: %v", err)
-			} else {
-				log.Printf("Successfully completed batch insert to PostgreSQL")
-			}
+		// バッチ処理用のデータを準備して保存
+		err = prepareBatchDataAndSave(results, targetDate, pgDB)
+		if err != nil {
+			log.Printf("Error preparing and saving batch data: %v", err)
 		}
 
 		log.Println("All scenarios processed successfully")
@@ -436,112 +214,10 @@ func main() {
 	// 画像アップロードが有効な場合のみ画像生成とアップロードを実行
 	if config.EnableImageUpload {
 		log.Println("Image upload is enabled. Starting image generation and upload...")
-
-		// 4-card PLOと5-card PLOそれぞれから1問ずつ選択
-		var fourCardResult *EquityResult
-		var fiveCardResult *EquityResult
-
-		// resultsから4-cardと5-cardの問題を抽出
-		for i := range results {
-			if len(results[i].HeroHand) == 8 && fourCardResult == nil {
-				fourCardResult = &results[i]
-			} else if len(results[i].HeroHand) == 10 && fiveCardResult == nil {
-				fiveCardResult = &results[i]
-			}
-			
-			// 両方見つかったら終了
-			if fourCardResult != nil && fiveCardResult != nil {
-				break
-			}
-		}
-
-		// R2設定を取得（両方の画像で共通使用）
-		r2Config := storage.R2Config{
-			Endpoint:   getEnvOrDefault("R2_ENDPOINT", ""),
-			AccessKey:  getEnvOrDefault("R2_ACCESS_KEY", ""),
-			SecretKey:  getEnvOrDefault("R2_SECRET_KEY", ""),
-			BucketName: getEnvOrDefault("R2_BUCKET", ""),
-		}
-
-		// R2クライアントを作成
-		r2Client, err := storage.GetR2Client(r2Config)
+		err := processImageGenerationAndUpload(results, targetDate)
 		if err != nil {
-			log.Printf("Error creating R2 client: %v", err)
+			log.Printf("Error in image generation and upload: %v", err)
 		}
-
-		// 4-card PLOの画像生成とアップロード
-		if fourCardResult != nil {
-			gameTypeDir := "4card"
-			imagePath := filepath.Join("images/daily-quiz", gameTypeDir, targetDate.Format("2006-01-02")+".png")
-
-			err := image.GenerateDailyQuizImage(
-				targetDate,
-				fourCardResult.Scenario.Name,
-				fourCardResult.HeroHand,
-				fourCardResult.Flop,
-			)
-			if err != nil {
-				log.Printf("Error generating 4-card PLO daily quiz image: %v", err)
-			} else {
-				log.Printf("Successfully generated 4-card PLO daily quiz image for %s", targetDate.Format("2006-01-02"))
-
-				if r2Client != nil {
-					// 画像をR2にアップロード
-					objectKey := "daily-quiz/" + gameTypeDir + "/" + targetDate.Format("2006-01-02") + ".png"
-					err = storage.UploadImageToR2(r2Client, r2Config.BucketName, imagePath, objectKey)
-					if err != nil {
-						log.Printf("Error uploading 4-card PLO image to R2: %v", err)
-					} else {
-						log.Printf("Successfully uploaded 4-card PLO image to R2: %s", objectKey)
-
-						// 公開URLを生成
-						publicURL := storage.GetR2ObjectURL(r2Config.Endpoint, r2Config.BucketName, objectKey)
-						log.Printf("4-card PLO image public URL: %s", publicURL)
-					}
-				}
-			}
-		} else {
-			log.Printf("No 4-card PLO result found for image generation")
-		}
-
-		// 5-card PLOの画像生成とアップロード
-		if fiveCardResult != nil {
-			gameTypeDir := "5card"
-			imagePath := filepath.Join("images/daily-quiz", gameTypeDir, targetDate.Format("2006-01-02")+".png")
-
-			err := image.GenerateDailyQuizImage(
-				targetDate,
-				fiveCardResult.Scenario.Name,
-				fiveCardResult.HeroHand,
-				fiveCardResult.Flop,
-			)
-			if err != nil {
-				log.Printf("Error generating 5-card PLO daily quiz image: %v", err)
-			} else {
-				log.Printf("Successfully generated 5-card PLO daily quiz image for %s", targetDate.Format("2006-01-02"))
-
-				if r2Client != nil {
-					// 画像をR2にアップロード
-					objectKey := "daily-quiz/" + gameTypeDir + "/" + targetDate.Format("2006-01-02") + ".png"
-					err = storage.UploadImageToR2(r2Client, r2Config.BucketName, imagePath, objectKey)
-					if err != nil {
-						log.Printf("Error uploading 5-card PLO image to R2: %v", err)
-					} else {
-						log.Printf("Successfully uploaded 5-card PLO image to R2: %s", objectKey)
-
-						// 公開URLを生成
-						publicURL := storage.GetR2ObjectURL(r2Config.Endpoint, r2Config.BucketName, objectKey)
-						log.Printf("5-card PLO image public URL: %s", publicURL)
-					}
-				}
-			}
-		} else {
-			log.Printf("No 5-card PLO result found for image generation")
-		}
-
-		// 明示的にGCを呼び出し
-		runtime.GC()
-
 		log.Println("Image generation and upload completed")
 	} else {
 		log.Println("Image upload is disabled. Skipping image generation and upload.")
@@ -667,18 +343,8 @@ func generateHandsAndFlop(scenario Scenario, config *BatchConfig) (string, strin
 	// heroHandに含まれるカードは除外して、flopをランダムに生成
 	// ヒーローハンドをpoker.Card形式に変換
 	var heroCards []poker.Card
-	if len(heroHand) == 8 { // 4-card PLOハンド（4枚）
-		for j := 0; j < 8; j += 2 {
-			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
-			card := poker.NewCard(cardStr)
-			heroCards = append(heroCards, card)
-		}
-	} else if len(heroHand) == 10 { // 5-card PLOハンド（5枚）
-		for j := 0; j < 10; j += 2 {
-			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
-			card := poker.NewCard(cardStr)
-			heroCards = append(heroCards, card)
-		}
+	if len(heroHand) == FOUR_CARD_PLO_LENGTH || len(heroHand) == FIVE_CARD_PLO_LENGTH {
+		heroCards = parseHandCards(heroHand)
 	} else {
 		log.Printf("Warning: Unexpected hero hand format: %s", heroHand)
 	}
@@ -722,18 +388,8 @@ func generateHandsAndFlop(scenario Scenario, config *BatchConfig) (string, strin
 func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, config *BatchConfig) (map[string]float64, int, error) {
 	// ヒーローハンドをpoker.Card形式に変換
 	var yourHand []poker.Card
-	if len(heroHand) == 8 { // 4-card PLO
-		for j := 0; j < 8; j += 2 {
-			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
-			tempCard := poker.NewCard(cardStr)
-			yourHand = append(yourHand, tempCard)
-		}
-	} else if len(heroHand) == 10 { // 5-card PLO
-		for j := 0; j < 10; j += 2 {
-			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
-			tempCard := poker.NewCard(cardStr)
-			yourHand = append(yourHand, tempCard)
-		}
+	if len(heroHand) == FOUR_CARD_PLO_LENGTH || len(heroHand) == FIVE_CARD_PLO_LENGTH {
+		yourHand = parseHandCards(heroHand)
 	} else {
 		return nil, 0, fmt.Errorf("invalid hero hand format: %s", heroHand)
 	}
@@ -743,20 +399,8 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 	var formattedOpponentHands [][]poker.Card
 	for _, hand := range opponentHands {
 		tmpHand := strings.Split(hand, "@")[0]
-		var tempArray []poker.Card
-		if len(tmpHand) == 8 { // 4-card PLO
-			for j := 0; j < 8; j += 2 {
-				cardStr := strings.ToUpper(tmpHand[j:j+1]) + strings.ToLower(tmpHand[j+1:j+2])
-				tempCard := poker.NewCard(cardStr)
-				tempArray = append(tempArray, tempCard)
-			}
-			formattedOpponentHands = append(formattedOpponentHands, tempArray)
-		} else if len(tmpHand) == 10 { // 5-card PLO
-			for j := 0; j < 10; j += 2 {
-				cardStr := strings.ToUpper(tmpHand[j:j+1]) + strings.ToLower(tmpHand[j+1:j+2])
-				tempCard := poker.NewCard(cardStr)
-				tempArray = append(tempArray, tempCard)
-			}
+		if len(tmpHand) == FOUR_CARD_PLO_LENGTH || len(tmpHand) == FIVE_CARD_PLO_LENGTH {
+			tempArray := parseHandCards(tmpHand)
 			formattedOpponentHands = append(formattedOpponentHands, tempArray)
 		}
 	}
@@ -861,4 +505,376 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 			return equities, 0, err
 		}
 	}
+}
+
+// processImageGenerationAndUpload handles image generation and upload for both 4-card and 5-card PLO
+func processImageGenerationAndUpload(results []EquityResult, targetDate time.Time) error {
+	// Find one result for each game type
+	var fourCardResult *EquityResult
+	var fiveCardResult *EquityResult
+
+	for i := range results {
+		if len(results[i].HeroHand) == FOUR_CARD_PLO_LENGTH && fourCardResult == nil {
+			fourCardResult = &results[i]
+		} else if len(results[i].HeroHand) == FIVE_CARD_PLO_LENGTH && fiveCardResult == nil {
+			fiveCardResult = &results[i]
+		}
+		
+		// Stop when both are found
+		if fourCardResult != nil && fiveCardResult != nil {
+			break
+		}
+	}
+
+	// Get R2 configuration
+	r2Config := storage.R2Config{
+		Endpoint:   getEnvOrDefault("R2_ENDPOINT", ""),
+		AccessKey:  getEnvOrDefault("R2_ACCESS_KEY", ""),
+		SecretKey:  getEnvOrDefault("R2_SECRET_KEY", ""),
+		BucketName: getEnvOrDefault("R2_BUCKET", ""),
+	}
+
+	// Create R2 client
+	r2Client, err := storage.GetR2Client(r2Config)
+	if err != nil {
+		return fmt.Errorf("creating R2 client: %w", err)
+	}
+
+	// Process 4-card PLO
+	if fourCardResult != nil {
+		if err := generateAndUploadImage(fourCardResult, targetDate, "4card", r2Client, r2Config); err != nil {
+			log.Printf("Error processing 4-card PLO image: %v", err)
+		}
+	} else {
+		log.Printf("No 4-card PLO result found for image generation")
+	}
+
+	// Process 5-card PLO
+	if fiveCardResult != nil {
+		if err := generateAndUploadImage(fiveCardResult, targetDate, "5card", r2Client, r2Config); err != nil {
+			log.Printf("Error processing 5-card PLO image: %v", err)
+		}
+	} else {
+		log.Printf("No 5-card PLO result found for image generation")
+	}
+
+	// Explicit garbage collection
+	runtime.GC()
+
+	return nil
+}
+
+// generateAndUploadImage generates and uploads a single quiz image
+func generateAndUploadImage(result *EquityResult, targetDate time.Time, gameTypeDir string, r2Client *s3.S3, r2Config storage.R2Config) error {
+	imagePath := filepath.Join("images/daily-quiz", gameTypeDir, targetDate.Format("2006-01-02")+".png")
+	
+	// Generate image
+	err := image.GenerateDailyQuizImage(
+		targetDate,
+		result.Scenario.Name,
+		result.HeroHand,
+		result.Flop,
+	)
+	if err != nil {
+		return fmt.Errorf("generating %s PLO daily quiz image: %w", gameTypeDir, err)
+	}
+	
+	log.Printf("Successfully generated %s PLO daily quiz image for %s", gameTypeDir, targetDate.Format("2006-01-02"))
+
+	// Upload to R2 if client is available
+	if r2Client != nil {
+		objectKey := fmt.Sprintf("daily-quiz/%s/%s.png", gameTypeDir, targetDate.Format("2006-01-02"))
+		err = storage.UploadImageToR2(r2Client, r2Config.BucketName, imagePath, objectKey)
+		if err != nil {
+			return fmt.Errorf("uploading %s PLO image to R2: %w", gameTypeDir, err)
+		}
+		
+		log.Printf("Successfully uploaded %s PLO image to R2: %s", gameTypeDir, objectKey)
+
+		// Generate public URL
+		publicURL := storage.GetR2ObjectURL(r2Config.Endpoint, r2Config.BucketName, objectKey)
+		log.Printf("%s PLO image public URL: %s", gameTypeDir, publicURL)
+	}
+	
+	return nil
+}
+
+// convertExistingResultsToEquityResults converts database results to EquityResult structs
+func convertExistingResultsToEquityResults(existingResults []map[string]interface{}, targetDate time.Time) []EquityResult {
+	var results []EquityResult
+	
+	// []map[string]interface{}から[]EquityResultに変換
+	for _, result := range existingResults {
+		scenarioName, _ := result["scenario"].(string)
+		heroHand, _ := result["hero_hand"].(string)
+		flopStr, _ := result["flop"].(string) // フロップ文字列を取得
+		averageEquity, _ := result["average_equity"].(float64)
+
+		// シナリオの検索
+		var foundScenario Scenario
+		for _, s := range scenarios {
+			if s.Name == scenarioName {
+				foundScenario = s
+				break
+			}
+		}
+
+		// フロップの文字列をpoker.Card配列に変換
+		var flopCards []poker.Card
+		if flopStr != "" {
+			flopCards = parseFlopString(flopStr)
+			log.Printf("Using flop cards: %s", pkrlib.GenerateBoardString(flopCards))
+		} else {
+			log.Printf("Warning: No flop data found for date %s", targetDate.Format("2006-01-02"))
+		}
+
+		// Equitiesマップの作成（データベースから取得したデータに基づく）
+		equities := make(map[string]float64)
+
+		results = append(results, EquityResult{
+			Scenario:      foundScenario,
+			HeroHand:      heroHand,
+			Flop:          flopCards,
+			Equities:      equities,
+			AverageEquity: averageEquity,
+		})
+	}
+	
+	return results
+}
+
+// parseFlopString parses a flop string into poker.Card array
+func parseFlopString(flopStr string) []poker.Card {
+	return parseCardsFromString(flopStr)
+}
+
+// parseCardsFromString parses a card string (e.g., "2d3cJc") into poker.Card array
+func parseCardsFromString(cardsStr string) []poker.Card {
+	var cards []poker.Card
+	// カード文字列は "2d3cJc" のような形式と仮定
+	// 2文字ずつ（数字+スート）で分割して処理
+	for i := 0; i < len(cardsStr); i += 2 {
+		if i+2 <= len(cardsStr) {
+			card := parseCardAt(cardsStr, i)
+			cards = append(cards, card)
+		}
+	}
+	return cards
+}
+
+// parseCardAt parses a single card at the given position in the string
+func parseCardAt(cardsStr string, position int) poker.Card {
+	cardStr := strings.ToUpper(cardsStr[position:position+1]) + strings.ToLower(cardsStr[position+1:position+2])
+	return poker.NewCard(cardStr)
+}
+
+// parseHandCards parses hand cards based on hand length (4-card or 5-card PLO)
+func parseHandCards(hand string) []poker.Card {
+	return parseCardsFromString(hand)
+}
+
+// processScenarios processes all scenarios either in parallel or sequentially
+func processScenarios(config *BatchConfig) []EquityResult {
+	var results []EquityResult
+	
+	if config.EnableParallelProcessing {
+		// 並列処理が有効な場合
+		results = processScenariosConcurrently(config)
+	} else {
+		// 並列処理が無効な場合（シーケンシャル処理）
+		results = processScenariosSequentially(config)
+	}
+	
+	return results
+}
+
+// processScenariosConcurrently processes scenarios in parallel
+func processScenariosConcurrently(config *BatchConfig) []EquityResult {
+	maxJobs := config.MaxParallelJobs
+	log.Printf("Starting parallel processing for %d scenarios using %d jobs", len(scenarios), maxJobs)
+
+	// 同時実行数を制限するセマフォ
+	semaphore := make(chan struct{}, maxJobs)
+	var wg sync.WaitGroup
+
+	// 結果を収集するためのチャネル
+	resultChan := make(chan EquityResult, len(scenarios))
+
+	// 各シナリオを並列で実行
+	for i, scenario := range scenarios {
+		wg.Add(1)
+		semaphore <- struct{}{} // セマフォを取得
+
+		// シナリオ処理をgoroutineで実行
+		go func(index int, currentScenario Scenario) {
+			defer wg.Done()
+			defer func() { <-semaphore }() // セマフォを解放
+
+			result, err := processSingleScenario(index, currentScenario, config)
+			if err != nil {
+				log.Printf("Scenario %d failed: %v", index+1, err)
+				return
+			}
+			
+			resultChan <- result
+		}(i, scenario)
+	}
+
+	// すべてのgoroutineが完了するのを待つ
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// 結果を収集
+	var results []EquityResult
+	for result := range resultChan {
+		results = append(results, result)
+	}
+	
+	return results
+}
+
+// processScenariosSequentially processes scenarios sequentially
+func processScenariosSequentially(config *BatchConfig) []EquityResult {
+	log.Printf("Starting sequential processing for %d scenarios", len(scenarios))
+	var results []EquityResult
+
+	// 各シナリオを順次実行
+	for i, scenario := range scenarios {
+		result, err := processSingleScenario(i, scenario, config)
+		if err != nil {
+			log.Printf("Scenario %d failed: %v", i+1, err)
+			continue
+		}
+		results = append(results, result)
+	}
+	
+	return results
+}
+
+// processSingleScenario processes a single scenario
+func processSingleScenario(index int, scenario Scenario, config *BatchConfig) (EquityResult, error) {
+	log.Printf("Starting scenario %d: %s", index+1, scenario.Name)
+	log.Printf("Selected scenario: %s", scenario.Name)
+
+	// シナリオに基づいてハンドとフロップを生成
+	heroHand, opponentRange, flop := generateHandsAndFlop(scenario, config)
+
+	// equity計算
+	equities, _, err := calculateEquity(heroHand, opponentRange, flop, config)
+	if err != nil {
+		log.Printf("Error calculating equity: %v", err)
+		return EquityResult{}, err
+	}
+
+	// 平均エクイティの計算
+	var totalEquity float64
+	for _, equity := range equities {
+		totalEquity += equity
+	}
+	averageEquity := totalEquity / float64(len(equities))
+
+	result := EquityResult{
+		Scenario:      scenario,
+		HeroHand:      heroHand,
+		Flop:          flop,
+		Equities:      equities,
+		AverageEquity: averageEquity,
+	}
+
+	log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
+		index+1, scenario.Name, pkrlib.GenerateBoardString(flop), heroHand, averageEquity)
+	
+	return result, nil
+}
+
+// prepareBatchDataAndSave prepares batch data and saves to database
+func prepareBatchDataAndSave(results []EquityResult, targetDate time.Time, pgDB *sql.DB) error {
+	var batchResults []db.DailyQuizResult
+
+	// 結果をシナリオごとにグループ化
+	scenarioResults := make(map[string][]EquityResult)
+	for _, result := range results {
+		scenarioName := result.Scenario.Name
+		scenarioResults[scenarioName] = append(scenarioResults[scenarioName], result)
+	}
+
+	// 各シナリオごとにバッチ用データを作成
+	for scenarioName, scenarioResultList := range scenarioResults {
+		if len(scenarioResultList) == 0 {
+			continue
+		}
+
+		// VillainEquity構造体を定義
+		type VillainEquity struct {
+			VillainHand string  `json:"villain_hand"`
+			Equity      float64 `json:"equity"`
+		}
+
+		// このシナリオのすべての結果から対戦相手のハンドとエクイティの配列を作成
+		allVillainEquities := []VillainEquity{}
+
+		// 平均エクイティの計算用
+		totalEquity := 0.0
+
+		// 最初の結果からheroHandとflopを取得（代表値として）
+		var heroHand string
+		var flop string
+		if len(scenarioResultList) > 0 {
+			heroHand = scenarioResultList[0].HeroHand
+			flop = pkrlib.GenerateBoardString(scenarioResultList[0].Flop)
+		}
+
+		for _, result := range scenarioResultList {
+			// Equitiesマップを配列に変換して追加
+			for villainHand, equity := range result.Equities {
+				allVillainEquities = append(allVillainEquities, VillainEquity{
+					VillainHand: villainHand,
+					Equity:      equity,
+				})
+			}
+
+			totalEquity += result.AverageEquity
+		}
+
+		// VillainEquities配列をJSON文字列に変換
+		villainEquitiesJSON, err := json.Marshal(allVillainEquities)
+		if err != nil {
+			log.Printf("Error marshaling villain equities for scenario %s to JSON: %v", scenarioName, err)
+			continue
+		}
+
+		// 平均エクイティはすべての結果の平均を使用
+		averageEquity := totalEquity / float64(len(scenarioResultList))
+
+		// ゲームタイプの判定
+		gameType := "4card_plo"
+		if len(heroHand) == FIVE_CARD_PLO_LENGTH {
+			gameType = "5card_plo"
+		}
+
+		// バッチ用データに追加
+		batchResults = append(batchResults, db.DailyQuizResult{
+			Date:          targetDate,
+			Scenario:      scenarioName,
+			HeroHand:      heroHand,
+			Flop:          flop,
+			Result:        string(villainEquitiesJSON),
+			AverageEquity: averageEquity,
+			GameType:      gameType,
+		})
+	}
+
+	// バッチ処理でPostgreSQLに保存
+	if len(batchResults) > 0 {
+		log.Printf("Starting batch insert of %d records to PostgreSQL", len(batchResults))
+		err := db.InsertDailyQuizResultsBatch(pgDB, batchResults)
+		if err != nil {
+			return fmt.Errorf("batch insert to PostgreSQL: %w", err)
+		}
+		log.Printf("Successfully completed batch insert to PostgreSQL")
+	}
+	
+	return nil
 }
