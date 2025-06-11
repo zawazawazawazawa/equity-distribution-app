@@ -368,9 +368,9 @@ func TestJudgeWinnerPLO5(t *testing.T) {
 		// 関数の実行
 		result := JudgeWinner(yourHand, opponentHand, board)
 
-		// 結果の検証 - yourHandがフルハウスで勝つべき
+		// 結果の検証 - yourHandがstraightで勝つべき
 		if result != "yourHand" {
-			t.Errorf("Expected 'yourHand' to win with full house, got %s", result)
+			t.Errorf("Expected 'yourHand' to win with straight, got %s", result)
 		}
 	})
 
@@ -402,9 +402,9 @@ func TestJudgeWinnerPLO5(t *testing.T) {
 		// 関数の実行
 		result := JudgeWinnerPLO5(yourHand, opponentHand, board)
 
-		// 結果の検証 - yourHandがストレートフラッシュで勝つべき
+		// 結果の検証 - yourHandがフラッシュで勝つべき
 		if result != "yourHand" {
-			t.Errorf("Expected 'yourHand' to win with straight flush, got %s", result)
+			t.Errorf("Expected 'yourHand' to win with flush, got %s", result)
 		}
 	})
 
