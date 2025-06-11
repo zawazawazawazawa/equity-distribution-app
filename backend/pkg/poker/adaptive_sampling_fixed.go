@@ -166,41 +166,8 @@ func CalculateHandVsRangeAdaptiveWithDetails(
 		avgEquity = totalEquity / float64(samplesUsed)
 	}
 	
-	// Phase 4: 未サンプリングのハンドに対してもエクイティを計算（全数が必要な場合）
-	// もし全ハンドのエクイティが必要なら、残りも計算
-	if len(equities) < len(validRange) {
-		log.Printf("Calculating remaining %d hands for complete coverage...", len(validRange)-len(equities))
-		
-		for i, oppHand := range validRange {
-			if !sampledIndices[i] {
-				wg.Add(1)
-				semaphore <- struct{}{}
-				
-				go func(currentHand []poker.Card) {
-					defer wg.Done()
-					defer func() { <-semaphore }()
-					
-					handStr := ""
-					for _, card := range currentHand {
-						handStr += card.String()
-					}
-					
-					equity, _ := CalculateHandVsHandEquity(yourHand, currentHand, board)
-					
-					if equity != -1 {
-						mu.Lock()
-						equities[handStr] = equity
-						mu.Unlock()
-					}
-				}(oppHand)
-			}
-		}
-		
-		wg.Wait()
-	}
-	
-	log.Printf("Adaptive sampling completed: sampled %d hands for statistics, calculated %d total equities",
-		samplesUsed, len(equities))
+	log.Printf("Adaptive sampling completed: sampled %d hands out of %d total hands (%.1f%%)",
+		samplesUsed, len(validRange), float64(samplesUsed)/float64(len(validRange))*100)
 	
 	return equities, avgEquity, samplesUsed, nil
 }
