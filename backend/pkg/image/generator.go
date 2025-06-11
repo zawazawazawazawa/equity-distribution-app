@@ -42,8 +42,12 @@ func GenerateDailyQuizImage(date time.Time, scenario string, heroHand string, fl
 		height = 630
 	)
 
-	// 2. 出力ディレクトリの確保
-	outputDir := "./images/daily-quiz"
+	// 2. 出力ディレクトリの確保（4card/5cardで分ける）
+	gameTypeDir := "4card"
+	if len(heroHand) == 10 {
+		gameTypeDir = "5card"
+	}
+	outputDir := filepath.Join("./images/daily-quiz", gameTypeDir)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
 	}
@@ -58,9 +62,13 @@ func GenerateDailyQuizImage(date time.Time, scenario string, heroHand string, fl
 	dc.SetRGB(1.0, 1.0, 1.0) // 白色
 	dc.Clear()
 
-	// 6. タイトルを描画
+	// 6. タイトルを描画（4-card or 5-card PLOを判定）
 	dateStr := date.Format("01/02")
-	if err := drawTitle(dc, dateStr+" PLO EQ Quiz"); err != nil {
+	gameType := "PLO"
+	if len(heroHand) == 10 {
+		gameType = "PLO5"
+	}
+	if err := drawTitle(dc, dateStr+" "+gameType+" EQ Quiz"); err != nil {
 		return err
 	}
 
@@ -70,12 +78,20 @@ func GenerateDailyQuizImage(date time.Time, scenario string, heroHand string, fl
 	}
 
 	// 8. ヒーローハンドを描画
-	if err := drawHeroHand(dc, heroHand, heroPosition, 100, 330); err != nil {
+	// 5カードPLOの場合は位置を調整
+	heroX := 100.0
+	flopX := 700.0
+	if len(heroHand) == 10 {
+		// 5カードPLOの場合、左右の余白を減らして中央のスペースを広げる
+		heroX = 50.0   // 左の余白を減らす
+		flopX = 750.0  // フロップを右に移動してスペースを確保
+	}
+	if err := drawHeroHand(dc, heroHand, heroPosition, heroX, 330); err != nil {
 		return err
 	}
 
 	// 9. フロップを描画（ヒーローハンドとの間に十分なスペースを確保）
-	if err := drawFlop(dc, flop, 700, 330); err != nil {
+	if err := drawFlop(dc, flop, flopX, 330); err != nil {
 		return err
 	}
 
@@ -137,8 +153,22 @@ func drawHeroHand(dc *gg.Context, heroHand string, position string, x, y float64
 	dc.SetRGB(0, 0, 0)
 	dc.DrawStringAnchored("Hero: "+position, x, y-60, 0, 0.5)
 
-	// カードの間隔
-	const cardSpacing = 25
+	// カード数を計算（2文字で1枚のカード）
+	numCards := len(heroHand) / 2
+
+	// カードの間隔を動的に計算
+	// 4カードの場合は通常の間隔、5カードの場合は狭い間隔
+	var cardSpacing float64
+	if numCards == 4 {
+		cardSpacing = 25
+	} else if numCards == 5 {
+		// 5カードの場合、利用可能なスペースに収まるように間隔を調整
+		// 利用可能スペース: 600px、カード幅: 110px × 5 = 550px
+		// 残りスペース: 50px を 4つの間隔で分割 = 12.5px
+		cardSpacing = 12
+	} else {
+		cardSpacing = 25 // デフォルト
+	}
 
 	// ヒーローハンドの各カードを処理
 	currentX := x

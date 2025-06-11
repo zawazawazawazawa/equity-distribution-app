@@ -64,6 +64,36 @@ var scenarios = []Scenario{
 		PresetName:  "3BP BTN call vs BB 3bet",
 		Description: "3ベットポット: BTNがBBの3ベットに対してコール",
 	},
+	{
+		Name:        "PLO5 SRP UTG vs BB",
+		PresetName:  "PLO5 SRP BB call vs UTG open",
+		Description: "5-card PLO シングルレイズポット: BBがUTGオープンに対してコール",
+	},
+	{
+		Name:        "PLO5 SRP BTN vs BB",
+		PresetName:  "PLO5 SRP BB call vs BTN open",
+		Description: "5-card PLO シングルレイズポット: BBがBTNオープンに対してコール",
+	},
+	{
+		Name:        "PLO5 SRP UTG vs BTN",
+		PresetName:  "PLO5 SRP BTN call vs UTG open",
+		Description: "5-card PLO シングルレイズポット: BTNがUTGオープンに対してコール",
+	},
+	{
+		Name:        "PLO5 3BP BB vs UTG",
+		PresetName:  "PLO5 3BP UTG call vs BB 3bet",
+		Description: "5-card PLO 3ベットポット: UTGがBBの3ベットに対してコール",
+	},
+	{
+		Name:        "PLO5 3BP BTN vs UTG",
+		PresetName:  "PLO5 3BP UTG call vs BTN 3bet",
+		Description: "5-card PLO 3ベットポット: UTGがBTNの3ベットに対してコール",
+	},
+	{
+		Name:        "PLO5 3BP BB vs BTN",
+		PresetName:  "PLO5 3BP BTN call vs BB 3bet",
+		Description: "5-card PLO 3ベットポット: BTNがBBの3ベットに対してコール",
+	},
 }
 
 // EquityResult は1つのシナリオの計算結果を表します
@@ -98,6 +128,7 @@ type BatchConfig struct {
 	// エクイティ計算設定
 	UseMonteCarloEquity bool   // Monte Carlo法を使用するか（false: exhaustive）
 	MonteCarloMode      string // Monte Carloの精度モード（FAST/NORMAL/ACCURATE）
+	UseAdaptiveSampling bool   // Adaptive samplingを使用するか
 }
 
 func main() {
@@ -233,7 +264,7 @@ func main() {
 					heroHand, opponentRange, flop := generateHandsAndFlop(currentScenario, config)
 
 					// equity計算
-					equities, err := calculateEquity(heroHand, opponentRange, flop, config)
+					equities, _, err := calculateEquity(heroHand, opponentRange, flop, config)
 					if err != nil {
 						log.Printf("Error calculating equity: %v", err)
 						log.Printf("Scenario %d failed: %v", index+1, err)
@@ -284,7 +315,7 @@ func main() {
 				heroHand, opponentRange, flop := generateHandsAndFlop(scenario, config)
 
 				// equity計算
-				equities, err := calculateEquity(heroHand, opponentRange, flop, config)
+				equities, _, err := calculateEquity(heroHand, opponentRange, flop, config)
 				if err != nil {
 					log.Printf("Error calculating equity: %v", err)
 					log.Printf("Scenario %d failed: %v", i+1, err)
@@ -370,6 +401,12 @@ func main() {
 			// 平均エクイティはすべての結果の平均を使用
 			averageEquity := totalEquity / float64(len(scenarioResultList))
 
+			// ゲームタイプの判定
+			gameType := "4card_plo"
+			if len(heroHand) == 10 {
+				gameType = "5card_plo"
+			}
+
 			// バッチ用データに追加
 			batchResults = append(batchResults, db.DailyQuizResult{
 				Date:          targetDate,
@@ -378,7 +415,7 @@ func main() {
 				Flop:          flop,
 				Result:        string(villainEquitiesJSON),
 				AverageEquity: averageEquity,
-				GameType:      "4card_plo", // ゲームタイプを明示的に指定
+				GameType:      gameType,
 			})
 		}
 
@@ -400,55 +437,112 @@ func main() {
 	if config.EnableImageUpload {
 		log.Println("Image upload is enabled. Starting image generation and upload...")
 
-		// 1問目のシナリオを使用して画像生成
-		if len(results) > 0 {
-			firstResult := results[0]
-			imagePath := filepath.Join("images/daily-quiz", targetDate.Format("2006-01-02")+".png")
+		// 4-card PLOと5-card PLOそれぞれから1問ずつ選択
+		var fourCardResult *EquityResult
+		var fiveCardResult *EquityResult
+
+		// resultsから4-cardと5-cardの問題を抽出
+		for i := range results {
+			if len(results[i].HeroHand) == 8 && fourCardResult == nil {
+				fourCardResult = &results[i]
+			} else if len(results[i].HeroHand) == 10 && fiveCardResult == nil {
+				fiveCardResult = &results[i]
+			}
+			
+			// 両方見つかったら終了
+			if fourCardResult != nil && fiveCardResult != nil {
+				break
+			}
+		}
+
+		// R2設定を取得（両方の画像で共通使用）
+		r2Config := storage.R2Config{
+			Endpoint:   getEnvOrDefault("R2_ENDPOINT", ""),
+			AccessKey:  getEnvOrDefault("R2_ACCESS_KEY", ""),
+			SecretKey:  getEnvOrDefault("R2_SECRET_KEY", ""),
+			BucketName: getEnvOrDefault("R2_BUCKET", ""),
+		}
+
+		// R2クライアントを作成
+		r2Client, err := storage.GetR2Client(r2Config)
+		if err != nil {
+			log.Printf("Error creating R2 client: %v", err)
+		}
+
+		// 4-card PLOの画像生成とアップロード
+		if fourCardResult != nil {
+			gameTypeDir := "4card"
+			imagePath := filepath.Join("images/daily-quiz", gameTypeDir, targetDate.Format("2006-01-02")+".png")
 
 			err := image.GenerateDailyQuizImage(
 				targetDate,
-				firstResult.Scenario.Name,
-				firstResult.HeroHand,
-				firstResult.Flop,
+				fourCardResult.Scenario.Name,
+				fourCardResult.HeroHand,
+				fourCardResult.Flop,
 			)
 			if err != nil {
-				log.Printf("Error generating daily quiz image: %v", err)
+				log.Printf("Error generating 4-card PLO daily quiz image: %v", err)
 			} else {
-				log.Printf("Successfully generated daily quiz image for %s", targetDate.Format("2006-01-02"))
+				log.Printf("Successfully generated 4-card PLO daily quiz image for %s", targetDate.Format("2006-01-02"))
 
-				// R2設定を取得
-				r2Config := storage.R2Config{
-					Endpoint:   getEnvOrDefault("R2_ENDPOINT", ""),
-					AccessKey:  getEnvOrDefault("R2_ACCESS_KEY", ""),
-					SecretKey:  getEnvOrDefault("R2_SECRET_KEY", ""),
-					BucketName: getEnvOrDefault("R2_BUCKET", ""),
-				}
-
-				// R2クライアントを作成
-				r2Client, err := storage.GetR2Client(r2Config)
-				if err != nil {
-					log.Printf("Error creating R2 client: %v", err)
-				} else {
+				if r2Client != nil {
 					// 画像をR2にアップロード
-					objectKey := "daily-quiz/" + targetDate.Format("2006-01-02") + ".png"
+					objectKey := "daily-quiz/" + gameTypeDir + "/" + targetDate.Format("2006-01-02") + ".png"
 					err = storage.UploadImageToR2(r2Client, r2Config.BucketName, imagePath, objectKey)
 					if err != nil {
-						log.Printf("Error uploading image to R2: %v", err)
+						log.Printf("Error uploading 4-card PLO image to R2: %v", err)
 					} else {
-						log.Printf("Successfully uploaded image to R2: %s", objectKey)
+						log.Printf("Successfully uploaded 4-card PLO image to R2: %s", objectKey)
 
 						// 公開URLを生成
 						publicURL := storage.GetR2ObjectURL(r2Config.Endpoint, r2Config.BucketName, objectKey)
-						log.Printf("Image public URL: %s", publicURL)
+						log.Printf("4-card PLO image public URL: %s", publicURL)
 					}
 				}
 			}
-
-			// 明示的にGCを呼び出し
-			runtime.GC()
-
-			log.Println("Image generation and upload completed")
+		} else {
+			log.Printf("No 4-card PLO result found for image generation")
 		}
+
+		// 5-card PLOの画像生成とアップロード
+		if fiveCardResult != nil {
+			gameTypeDir := "5card"
+			imagePath := filepath.Join("images/daily-quiz", gameTypeDir, targetDate.Format("2006-01-02")+".png")
+
+			err := image.GenerateDailyQuizImage(
+				targetDate,
+				fiveCardResult.Scenario.Name,
+				fiveCardResult.HeroHand,
+				fiveCardResult.Flop,
+			)
+			if err != nil {
+				log.Printf("Error generating 5-card PLO daily quiz image: %v", err)
+			} else {
+				log.Printf("Successfully generated 5-card PLO daily quiz image for %s", targetDate.Format("2006-01-02"))
+
+				if r2Client != nil {
+					// 画像をR2にアップロード
+					objectKey := "daily-quiz/" + gameTypeDir + "/" + targetDate.Format("2006-01-02") + ".png"
+					err = storage.UploadImageToR2(r2Client, r2Config.BucketName, imagePath, objectKey)
+					if err != nil {
+						log.Printf("Error uploading 5-card PLO image to R2: %v", err)
+					} else {
+						log.Printf("Successfully uploaded 5-card PLO image to R2: %s", objectKey)
+
+						// 公開URLを生成
+						publicURL := storage.GetR2ObjectURL(r2Config.Endpoint, r2Config.BucketName, objectKey)
+						log.Printf("5-card PLO image public URL: %s", publicURL)
+					}
+				}
+			}
+		} else {
+			log.Printf("No 5-card PLO result found for image generation")
+		}
+
+		// 明示的にGCを呼び出し
+		runtime.GC()
+
+		log.Println("Image generation and upload completed")
 	} else {
 		log.Println("Image upload is disabled. Skipping image generation and upload.")
 	}
@@ -475,6 +569,7 @@ func parseFlags() *BatchConfig {
 	// エクイティ計算設定を環境変数から取得
 	useMonteCarloEquity := getEnvBoolOrDefault("USE_MONTE_CARLO_EQUITY", false)
 	monteCarloMode := getEnvOrDefault("MONTE_CARLO_MODE", "ACCURATE")
+	useAdaptiveSampling := getEnvBoolOrDefault("USE_ADAPTIVE_SAMPLING", false)
 
 	flag.StringVar(&config.LogFile, "log", "", "Log file (empty for stdout)")
 	flag.StringVar(&config.DataDir, "data", "data", "Directory containing preset data files")
@@ -497,6 +592,7 @@ func parseFlags() *BatchConfig {
 	// エクイティ計算設定
 	flag.BoolVar(&config.UseMonteCarloEquity, "monte-carlo", useMonteCarloEquity, "Use Monte Carlo equity calculation instead of exhaustive")
 	flag.StringVar(&config.MonteCarloMode, "monte-carlo-mode", monteCarloMode, "Monte Carlo accuracy mode (FAST/NORMAL/ACCURATE)")
+	flag.BoolVar(&config.UseAdaptiveSampling, "adaptive", useAdaptiveSampling, "Use adaptive sampling for hand vs range calculation")
 
 	flag.Parse()
 
@@ -571,8 +667,14 @@ func generateHandsAndFlop(scenario Scenario, config *BatchConfig) (string, strin
 	// heroHandに含まれるカードは除外して、flopをランダムに生成
 	// ヒーローハンドをpoker.Card形式に変換
 	var heroCards []poker.Card
-	if len(heroHand) == 8 { // PLOハンド（4枚）
+	if len(heroHand) == 8 { // 4-card PLOハンド（4枚）
 		for j := 0; j < 8; j += 2 {
+			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
+			card := poker.NewCard(cardStr)
+			heroCards = append(heroCards, card)
+		}
+	} else if len(heroHand) == 10 { // 5-card PLOハンド（5枚）
+		for j := 0; j < 10; j += 2 {
 			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
 			card := poker.NewCard(cardStr)
 			heroCards = append(heroCards, card)
@@ -617,17 +719,23 @@ func generateHandsAndFlop(scenario Scenario, config *BatchConfig) (string, strin
 }
 
 // equity計算を実行する
-func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, config *BatchConfig) (map[string]float64, error) {
+func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, config *BatchConfig) (map[string]float64, int, error) {
 	// ヒーローハンドをpoker.Card形式に変換
 	var yourHand []poker.Card
-	if len(heroHand) == 8 {
+	if len(heroHand) == 8 { // 4-card PLO
 		for j := 0; j < 8; j += 2 {
 			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
 			tempCard := poker.NewCard(cardStr)
 			yourHand = append(yourHand, tempCard)
 		}
+	} else if len(heroHand) == 10 { // 5-card PLO
+		for j := 0; j < 10; j += 2 {
+			cardStr := strings.ToUpper(heroHand[j:j+1]) + strings.ToLower(heroHand[j+1:j+2])
+			tempCard := poker.NewCard(cardStr)
+			yourHand = append(yourHand, tempCard)
+		}
 	} else {
-		return nil, fmt.Errorf("invalid hero hand format: %s", heroHand)
+		return nil, 0, fmt.Errorf("invalid hero hand format: %s", heroHand)
 	}
 
 	// Opponentレンジをpoker.Card形式に変換
@@ -636,8 +744,15 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 	for _, hand := range opponentHands {
 		tmpHand := strings.Split(hand, "@")[0]
 		var tempArray []poker.Card
-		if len(tmpHand) == 8 {
+		if len(tmpHand) == 8 { // 4-card PLO
 			for j := 0; j < 8; j += 2 {
+				cardStr := strings.ToUpper(tmpHand[j:j+1]) + strings.ToLower(tmpHand[j+1:j+2])
+				tempCard := poker.NewCard(cardStr)
+				tempArray = append(tempArray, tempCard)
+			}
+			formattedOpponentHands = append(formattedOpponentHands, tempArray)
+		} else if len(tmpHand) == 10 { // 5-card PLO
+			for j := 0; j < 10; j += 2 {
 				cardStr := strings.ToUpper(tmpHand[j:j+1]) + strings.ToLower(tmpHand[j+1:j+2])
 				tempCard := poker.NewCard(cardStr)
 				tempArray = append(tempArray, tempCard)
@@ -646,10 +761,43 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 		}
 	}
 
-	// Monte Carlo法を使用するかどうかで分岐
-	if config.UseMonteCarloEquity {
-		// Monte Carlo法を使用（Adaptive版を使用）
-		log.Printf("Using Monte Carlo adaptive equity calculation (mode: %s)", config.MonteCarloMode)
+	// Adaptive Samplingを使用するかどうかで分岐
+	if config.UseAdaptiveSampling {
+		// Adaptive Sampling法を使用（レンジ全体を動的サンプリング）
+		log.Printf("Using adaptive sampling for hand vs range calculation")
+		
+		// Adaptive設定を作成
+		adaptiveConfig := pkrlib.DefaultAdaptiveConfig()
+		switch config.MonteCarloMode {
+		case "FAST":
+			adaptiveConfig.MinSamples = 500
+			adaptiveConfig.MaxSamples = 3000
+			adaptiveConfig.TargetError = 0.03 // ±3%誤差
+		case "ACCURATE":
+			adaptiveConfig.MinSamples = 2000
+			adaptiveConfig.MaxSamples = 15000
+			adaptiveConfig.TargetError = 0.005 // ±0.5%誤差
+		case "NORMAL":
+			// デフォルト設定をそのまま使用
+		}
+		
+		// Adaptive samplingで計算（個別のエクイティも取得）
+		equities, avgEquity, samplesUsed, err := pkrlib.CalculateHandVsRangeAdaptiveWithDetails(
+			yourHand, formattedOpponentHands, flop, adaptiveConfig,
+		)
+		if err != nil {
+			return nil, 0, err
+		}
+		
+		log.Printf("Adaptive sampling completed: used %d samples out of %d hands (%.1f%%), average equity: %.2f%%, total equities calculated: %d",
+			samplesUsed, len(formattedOpponentHands), 
+			float64(samplesUsed)/float64(len(formattedOpponentHands))*100,
+			avgEquity, len(equities))
+		
+		return equities, samplesUsed, nil
+	} else if config.UseMonteCarloEquity {
+		// Monte Carlo法を使用（各ハンドに対して個別に計算）
+		log.Printf("Using Monte Carlo equity calculation (mode: %s)", config.MonteCarloMode)
 		
 		// Adaptive設定を作成
 		var adaptiveConfig pkrlib.EquityCalculationConfig
@@ -695,20 +843,22 @@ func calculateEquity(heroHand string, opponentRange string, flop []poker.Card, c
 			}
 		}
 		
-		log.Printf("Adaptive calculation completed with average %d iterations per hand", totalIterations/len(equities))
-		return equities, nil
+		log.Printf("Monte Carlo calculation completed with average %d iterations per hand", totalIterations/len(equities))
+		return equities, 0, nil
 	} else {
 		// 従来のExhaustive法を使用
 		if config.EnableParallelProcessing {
 			// 並列処理が有効な場合は並列計算関数を使用
 			log.Printf("Using exhaustive equity calculation with parallel processing")
-			return pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+			equities, err := pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+			return equities, 0, err
 		} else {
 			// 並列処理が無効な場合は非並列計算関数を使用
 			// 注: pkrlib.CalculateHandVsRangeEquityという非並列版の関数が存在しない場合は、
 			// 並列版の関数を使用します
 			log.Printf("Using exhaustive equity calculation")
-			return pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+			equities, err := pkrlib.CalculateHandVsRangeEquityParallel(yourHand, formattedOpponentHands, flop)
+			return equities, 0, err
 		}
 	}
 }
