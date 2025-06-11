@@ -12,6 +12,26 @@ import (
 	"github.com/chehsunliu/poker"
 )
 
+// AdaptiveSamplingConfig は適応的サンプリングの設定を表します
+type AdaptiveSamplingConfig struct {
+	MinSamples   int     // 最小サンプル数
+	MaxSamples   int     // 最大サンプル数
+	PilotSamples int     // パイロットサンプル数
+	TargetError  float64 // 目標誤差
+	ConfidenceZ  float64 // 信頼区間のZ値（95%信頼区間の場合1.96）
+}
+
+// DefaultAdaptiveConfig はデフォルトの適応的サンプリング設定を返します
+func DefaultAdaptiveConfig() AdaptiveSamplingConfig {
+	return AdaptiveSamplingConfig{
+		MinSamples:   1000,
+		MaxSamples:   10000,
+		PilotSamples: 100,
+		TargetError:  0.01,  // ±1%誤差
+		ConfidenceZ:  1.96,  // 95%信頼区間
+	}
+}
+
 // CalculateHandVsRangeAdaptiveWithDetails は動的サンプリングでエクイティを計算し、
 // 各ハンドの個別エクイティも返す
 func CalculateHandVsRangeAdaptiveWithDetails(

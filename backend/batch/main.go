@@ -103,7 +103,6 @@ type EquityResult struct {
 	Flop          []poker.Card
 	Equities      map[string]float64
 	AverageEquity float64 // 平均エクイティ
-	SamplingCount int     // Adaptive samplingで使用したサンプル数
 }
 
 // バッチ処理の設定
@@ -265,7 +264,7 @@ func main() {
 					heroHand, opponentRange, flop := generateHandsAndFlop(currentScenario, config)
 
 					// equity計算
-					equities, samplingCount, err := calculateEquity(heroHand, opponentRange, flop, config)
+					equities, _, err := calculateEquity(heroHand, opponentRange, flop, config)
 					if err != nil {
 						log.Printf("Error calculating equity: %v", err)
 						log.Printf("Scenario %d failed: %v", index+1, err)
@@ -286,7 +285,6 @@ func main() {
 						Flop:          flop,
 						Equities:      equities,
 						AverageEquity: averageEquity,
-						SamplingCount: samplingCount,
 					}
 
 					log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
@@ -317,7 +315,7 @@ func main() {
 				heroHand, opponentRange, flop := generateHandsAndFlop(scenario, config)
 
 				// equity計算
-				equities, samplingCount, err := calculateEquity(heroHand, opponentRange, flop, config)
+				equities, _, err := calculateEquity(heroHand, opponentRange, flop, config)
 				if err != nil {
 					log.Printf("Error calculating equity: %v", err)
 					log.Printf("Scenario %d failed: %v", i+1, err)
@@ -338,7 +336,6 @@ func main() {
 					Flop:          flop,
 					Equities:      equities,
 					AverageEquity: averageEquity,
-					SamplingCount: samplingCount,
 				})
 
 				log.Printf("Scenario %d completed: %s - Flop: %s, Hero: %s, Average Equity: %.2f%%",
@@ -373,7 +370,6 @@ func main() {
 
 			// 平均エクイティの計算用
 			totalEquity := 0.0
-			var totalSamplingCount int
 
 			// 最初の結果からheroHandとflopを取得（代表値として）
 			var heroHand string
@@ -393,7 +389,6 @@ func main() {
 				}
 
 				totalEquity += result.AverageEquity
-				totalSamplingCount += result.SamplingCount
 			}
 
 			// VillainEquities配列をJSON文字列に変換
@@ -412,12 +407,6 @@ func main() {
 				gameType = "5card_plo"
 			}
 
-			// サンプリング数の処理（0の場合はnilを設定）
-			var samplingCountPtr *int
-			if totalSamplingCount > 0 {
-				samplingCountPtr = &totalSamplingCount
-			}
-
 			// バッチ用データに追加
 			batchResults = append(batchResults, db.DailyQuizResult{
 				Date:          targetDate,
@@ -427,7 +416,6 @@ func main() {
 				Result:        string(villainEquitiesJSON),
 				AverageEquity: averageEquity,
 				GameType:      gameType,
-				SamplingCount: samplingCountPtr,
 			})
 		}
 
