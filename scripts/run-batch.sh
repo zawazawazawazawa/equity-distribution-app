@@ -15,6 +15,7 @@
 #   -n <DB名>       : PostgreSQLデータベース名 (デフォルト: plo_equity)
 #   -M              : Monte Carloモードを有効にする
 #   -m <モード>     : Monte Carloの精度モード (FAST/NORMAL/ACCURATE、デフォルト: NORMAL)
+#   -A              : Adaptive samplingモードを有効にする
 #   -h              : ヘルプを表示
 
 # 日付生成関数
@@ -44,9 +45,10 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-"postgres"}
 POSTGRES_DBNAME=${POSTGRES_DBNAME:-"plo_equity"}
 USE_MONTE_CARLO=false
 MONTE_CARLO_MODE="NORMAL"
+USE_ADAPTIVE_SAMPLING=false
 
 # コマンドライン引数の解析
-while getopts "l:d:D:N:H:p:u:P:n:Mm:h" opt; do
+while getopts "l:d:D:N:H:p:u:P:n:Mm:Ah" opt; do
   case $opt in
     l) LOG_FILE=$OPTARG ;;
     d) DATA_DIR=$OPTARG ;;
@@ -59,6 +61,7 @@ while getopts "l:d:D:N:H:p:u:P:n:Mm:h" opt; do
     n) POSTGRES_DBNAME=$OPTARG ;;
     M) USE_MONTE_CARLO=true ;;
     m) MONTE_CARLO_MODE=$OPTARG ;;
+    A) USE_ADAPTIVE_SAMPLING=true ;;
     h)
       echo "使用方法: $0 [オプション]"
       echo "オプション:"
@@ -73,6 +76,7 @@ while getopts "l:d:D:N:H:p:u:P:n:Mm:h" opt; do
       echo "  -n <DB名>       : PostgreSQLデータベース名 (デフォルト: plo_equity)"
       echo "  -M              : Monte Carloモードを有効にする"
       echo "  -m <モード>     : Monte Carloの精度モード (FAST/NORMAL/ACCURATE、デフォルト: NORMAL)"
+      echo "  -A              : Adaptive samplingモードを有効にする"
       echo "  -h              : ヘルプを表示"
       exit 0
       ;;
@@ -111,6 +115,15 @@ else
   echo "ログ: 標準出力"
 fi
 
+# 計算モードの表示
+if [ "$USE_ADAPTIVE_SAMPLING" = "true" ]; then
+  echo "計算モード: Adaptive Sampling (精度: $MONTE_CARLO_MODE)"
+elif [ "$USE_MONTE_CARLO" = "true" ]; then
+  echo "計算モード: Monte Carlo (精度: $MONTE_CARLO_MODE)"
+else
+  echo "計算モード: Exhaustive (全数計算)"
+fi
+
 # ディレクトリ移動（ループの前に一度だけ実行）
 cd $(dirname $0)/..
 
@@ -137,6 +150,9 @@ for ((i=0; i<DAYS_COUNT; i++)); do
     CMD_ARGS="$CMD_ARGS -monte-carlo"
   fi
   CMD_ARGS="$CMD_ARGS -monte-carlo-mode $MONTE_CARLO_MODE"
+  if [ "$USE_ADAPTIVE_SAMPLING" = "true" ]; then
+    CMD_ARGS="$CMD_ARGS -adaptive"
+  fi
   
   # バッチ処理の実行
   echo "$(date '+%Y-%m-%d %H:%M:%S') - 日付: $CURRENT_DATE の処理を開始します"
