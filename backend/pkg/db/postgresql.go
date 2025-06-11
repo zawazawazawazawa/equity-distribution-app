@@ -31,6 +31,7 @@ type DailyQuizResult struct {
 	Result        string
 	AverageEquity float64
 	GameType      string
+	SamplingCount *int
 }
 
 // GetPostgresConnection はPostgreSQLへの接続を確立します
@@ -61,18 +62,18 @@ func GetPostgresConnection(config PostgresConfig) (*sql.DB, error) {
 }
 
 // InsertDailyQuizResult は計算結果をPostgreSQLに保存します
-func InsertDailyQuizResult(db *sql.DB, date time.Time, scenario string, heroHand string, flop string, result string, averageEquity float64, gameType string) error {
+func InsertDailyQuizResult(db *sql.DB, date time.Time, scenario string, heroHand string, flop string, result string, averageEquity float64, gameType string, samplingCount *int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	query := `
-		INSERT INTO daily_quiz_results (date, scenario, hero_hand, flop, result, average_equity, game_type)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO daily_quiz_results (date, scenario, hero_hand, flop, result, average_equity, game_type, sampling_count)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id
 	`
 
 	var id int
-	err := db.QueryRowContext(ctx, query, date, scenario, heroHand, flop, result, averageEquity, gameType).Scan(&id)
+	err := db.QueryRowContext(ctx, query, date, scenario, heroHand, flop, result, averageEquity, gameType, samplingCount).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("failed to insert data into PostgreSQL: %v", err)
 	}
@@ -177,8 +178,8 @@ func InsertDailyQuizResultsBatch(db *sql.DB, results []DailyQuizResult) error {
 
 	// バッチINSERT用のステートメントを準備
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO daily_quiz_results (date, scenario, hero_hand, flop, result, average_equity, game_type)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO daily_quiz_results (date, scenario, hero_hand, flop, result, average_equity, game_type, sampling_count)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %v", err)
@@ -187,7 +188,7 @@ func InsertDailyQuizResultsBatch(db *sql.DB, results []DailyQuizResult) error {
 
 	// 各レコードを挿入
 	for i, result := range results {
-		_, err = stmt.ExecContext(ctx, result.Date, result.Scenario, result.HeroHand, result.Flop, result.Result, result.AverageEquity, result.GameType)
+		_, err = stmt.ExecContext(ctx, result.Date, result.Scenario, result.HeroHand, result.Flop, result.Result, result.AverageEquity, result.GameType, result.SamplingCount)
 		if err != nil {
 			return fmt.Errorf("failed to insert record %d: %v", i+1, err)
 		}
