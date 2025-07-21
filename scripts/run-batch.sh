@@ -67,7 +67,7 @@ while getopts "l:d:D:N:H:p:u:P:n:Mm:Ah" opt; do
       echo "オプション:"
       echo "  -l <ファイル>    : ログファイル (デフォルト: stdout)"
       echo "  -d <ディレクトリ> : データディレクトリ (デフォルト: data)"
-      echo "  -D <YYYY-MM-DD> : 開始日付 (デフォルト: 翌日)"
+      echo "  -D <YYYY-MM-DD|日数> : 開始日付 (YYYY-MM-DD形式 または 現在からの日数、デフォルト: 翌日)"
       echo "  -N <日数>       : 生成する日数 (デフォルト: 7日間、開始日から1週間)"
       echo "  -H <ホスト>      : PostgreSQLホスト (デフォルト: localhost)"
       echo "  -p <ポート>      : PostgreSQLポート (デフォルト: 5432)"
@@ -102,6 +102,19 @@ if [ -z "$START_DATE" ]; then
     # Linux
     START_DATE=$(date -d "tomorrow" "+%Y-%m-%d")
   fi
+else
+  # 数値かどうかチェック（現在からの日数指定の場合）
+  if [[ "$START_DATE" =~ ^[0-9]+$ ]]; then
+    # 数値の場合は現在の日付からn日後を計算
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      # macOS
+      START_DATE=$(date -v+${START_DATE}d "+%Y-%m-%d")
+    else
+      # Linux
+      START_DATE=$(date -d "+$START_DATE days" "+%Y-%m-%d")
+    fi
+  fi
+  # YYYY-MM-DD形式の場合はそのまま使用
 fi
 
 # バッチ処理の実行
