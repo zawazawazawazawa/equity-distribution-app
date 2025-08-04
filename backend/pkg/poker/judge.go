@@ -5,8 +5,19 @@ import (
 )
 
 // JudgeWinner determines the winner between two hands
-// Automatically detects game type (2 cards = Hold'em, 4 cards = PLO, 5 cards = PLO5)
+// Automatically detects game type:
+// - 2 cards + board = Hold'em
+// - 4 cards + board = PLO
+// - 5 cards + board = PLO5
+// - 7 cards + no board = 7-card Stud (defaults to Stud High)
 func JudgeWinner(yourHand []poker.Card, opponentHand []poker.Card, board []poker.Card) string {
+	// Check for 7-card stud games (no board)
+	if len(yourHand) == 7 && len(opponentHand) == 7 && len(board) == 0 {
+		// Default to Stud High for backward compatibility
+		// Use specific functions for other stud variants
+		return JudgeWinnerStudHigh(yourHand, opponentHand)
+	}
+	
 	// Auto-detect game type based on hand size
 	if len(yourHand) == 5 && len(opponentHand) == 5 {
 		return JudgeWinnerPLO5(yourHand, opponentHand, board)
