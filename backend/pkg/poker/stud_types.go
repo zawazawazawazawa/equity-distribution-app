@@ -27,10 +27,9 @@ func (sh StudHand) AllCards() []poker.Card {
 
 // Stud8EquityResult represents the equity calculation result for Stud Hi-Lo 8 or better
 type Stud8EquityResult struct {
-	HighEquity  float64 // Equity for winning the high pot
-	LowEquity   float64 // Equity for winning the low pot
-	ScoopEquity float64 // Equity for winning both high and low (scoop)
-	TieEquity   float64 // Equity for tying
+	HighEquity  float64 // Probability of winning the high pot (%)
+	LowEquity   float64 // Probability of winning the low pot (%)
+	ScoopEquity float64 // Probability of winning both high and low (%)
 }
 
 // StudEquityResult represents the equity calculation result for stud games

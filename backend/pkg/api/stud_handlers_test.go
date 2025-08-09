@@ -30,12 +30,13 @@ func TestCalculateStudEquity(t *testing.T) {
 				OpponentDownCards: []string{"Ks", "Qd", "Jh"},
 				OpponentUpCards:   []string{"Tc", "9s", "8d", "8h"},
 				GameType:          "razz",
-				Precision:         "fast",
+				Precision:         "accurate",
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp StudEquityResponse) {
 				assert.Equal(t, "razz", resp.GameType)
-				assert.Greater(t, resp.YourEquity, 95.0) // 7-low should dominate
+				expectedEquity := 99.5 // 7-low should dominate
+				assert.InDelta(t, expectedEquity, resp.YourEquity, 0.5, "Equity should be within ±0.5% of expected value")
 				assert.Nil(t, resp.HighLowDetails)
 			},
 		},
@@ -47,12 +48,13 @@ func TestCalculateStudEquity(t *testing.T) {
 				OpponentDownCards: []string{"Ks", "Qd"},
 				OpponentUpCards:   []string{"Jh"},
 				GameType:          "stud_high",
-				Precision:         "normal",
+				Precision:         "accurate",
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp StudEquityResponse) {
 				assert.Equal(t, "7card_stud_high", resp.GameType)
-				assert.Greater(t, resp.YourEquity, 80.0) // Trips should be strong
+				expectedEquity := 92.7 // Trips should be strong (actual calculation result)
+				assert.InDelta(t, expectedEquity, resp.YourEquity, 0.5, "Equity should be within ±0.5% of expected value")
 			},
 		},
 		{
@@ -63,13 +65,16 @@ func TestCalculateStudEquity(t *testing.T) {
 				OpponentDownCards: []string{"Ks", "Kd"},
 				OpponentUpCards:   []string{"Qh", "Qc"},
 				GameType:          "stud_highlow8",
-				Precision:         "adaptive",
+				Precision:         "accurate",
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp StudEquityResponse) {
 				assert.Equal(t, "7card_stud_highlow8", resp.GameType)
 				assert.NotNil(t, resp.HighLowDetails)
-				assert.Greater(t, resp.HighLowDetails.LowEquity, 70.0) // Should have good low
+				expectedLowEquity := 75.0 // Should have good low
+				assert.InDelta(t, expectedLowEquity, resp.HighLowDetails.LowEquity, 0.5, "Low equity should be within ±0.5% of expected value")
+				expectedTotalEquity := 50.9 // Combined equity (actual calculation result)
+				assert.InDelta(t, expectedTotalEquity, resp.YourEquity, 0.5, "Total equity should be within ±0.5% of expected value")
 			},
 		},
 		{
@@ -152,13 +157,14 @@ func TestCalculateStudRangeEquity(t *testing.T) {
 					{DownCards: []string{"Js", "Jd"}, UpCards: []string{"Jh"}},
 				},
 				GameType:  "stud_high",
-				Precision: "fast",
+				Precision: "accurate",
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp StudRangeEquityResponse) {
 				assert.Equal(t, 3, resp.TotalHands)
 				assert.Equal(t, 3, len(resp.EquityGraph))
-				assert.Greater(t, resp.YourEquity, 50.0) // Aces should beat all pairs
+				expectedEquity := 72.7 // Aces should beat most pairs (actual calculation result)
+				assert.InDelta(t, expectedEquity, resp.YourEquity, 0.5, "Range equity should be within ±0.5% of expected value")
 			},
 		},
 		{

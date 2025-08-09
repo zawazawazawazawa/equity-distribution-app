@@ -196,6 +196,12 @@ func TestCompareRazzHands(t *testing.T) {
 			hand2:    RazzRank{cards: []int{1, 2, 4, 5, 6}},
 			expected: 1,
 		},
+		{
+			name:     "Test case: 1,3,4,5,6 vs 1,2,5,6,7",
+			hand1:    RazzRank{cards: []int{1, 3, 4, 5, 6}},
+			hand2:    RazzRank{cards: []int{1, 2, 5, 6, 7}},
+			expected: -1, // hand1 should win (6-high beats 7-high)
+		},
 	}
 
 	for _, tt := range tests {

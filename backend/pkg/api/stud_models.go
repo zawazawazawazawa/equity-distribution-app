@@ -8,7 +8,7 @@ type StudEquityRequest struct {
 	OpponentUpCards   []string `json:"opponent_up_cards,omitempty"`           // Opponent's exposed cards (optional)
 	KnownDeadCards    []string `json:"known_dead_cards,omitempty"`            // Other known cards (folded, etc.)
 	GameType          string   `json:"game_type" binding:"required"`           // "razz", "stud_high", or "stud_highlow8"
-	Precision         string   `json:"precision,omitempty"`                    // "fast", "normal", "accurate", or "adaptive"
+	Precision         string   `json:"precision,omitempty"`                    // "fast", "normal", "accurate", "very_accurate", "extreme", or "adaptive"
 }
 
 // StudEquityResponse represents the response for stud game equity calculation
@@ -22,10 +22,9 @@ type StudEquityResponse struct {
 
 // StudHighLowDetails provides detailed equity breakdown for Stud Hi-Lo 8 or better
 type StudHighLowDetails struct {
-	HighEquity  float64 `json:"high_equity"`  // Equity for winning high pot
-	LowEquity   float64 `json:"low_equity"`   // Equity for winning low pot
-	ScoopEquity float64 `json:"scoop_equity"` // Equity for winning both pots
-	NoLowProb   float64 `json:"no_low_prob"`  // Probability of no qualifying low
+	HighEquity  float64 `json:"high_equity"`  // Probability of winning high pot (%)
+	LowEquity   float64 `json:"low_equity"`   // Probability of winning low pot (%)
+	ScoopEquity float64 `json:"scoop_equity"` // Probability of winning both pots (%)
 }
 
 // StudRangeEquityRequest represents the request for stud game equity vs range

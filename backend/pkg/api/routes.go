@@ -8,6 +8,10 @@ import (
 
 // SetupRoutes configures all API routes
 func SetupRoutes(router *gin.Engine) {
+	// Serve static files for debug interface
+	router.Static("/static", "./static")
+	router.StaticFile("/debug", "./static/debug.html")
+	
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -31,17 +35,4 @@ func SetupRoutes(router *gin.Engine) {
 		}
 	}
 
-	// CORS middleware for browser requests
-	router.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-
-		c.Next()
-	})
 }

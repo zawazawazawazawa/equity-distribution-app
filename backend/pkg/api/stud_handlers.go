@@ -96,6 +96,12 @@ func CalculateStudEquity(c *gin.Context) {
 	case "accurate":
 		result, err = poker.CalculateStudEquity(yourHand, opponentHand, knownDeadCards, gameType, 10000)
 		iterations = result.TotalIterations
+	case "very_accurate":
+		result, err = poker.CalculateStudEquity(yourHand, opponentHand, knownDeadCards, gameType, 20000)
+		iterations = result.TotalIterations
+	case "extreme":
+		result, err = poker.CalculateStudEquity(yourHand, opponentHand, knownDeadCards, gameType, 30000)
+		iterations = result.TotalIterations
 	case "adaptive":
 		config := poker.GetDefaultAdaptiveConfig()
 		result, iterations, err = poker.CalculateStudEquityAdaptive(yourHand, opponentHand, knownDeadCards, gameType, config)
@@ -133,7 +139,6 @@ func CalculateStudEquity(c *gin.Context) {
 			HighEquity:  result.Stud8Result.HighEquity,
 			LowEquity:   result.Stud8Result.LowEquity,
 			ScoopEquity: result.Stud8Result.ScoopEquity,
-			NoLowProb:   calculateNoLowProbability(result.Stud8Result),
 		}
 	}
 
@@ -221,6 +226,10 @@ func CalculateStudRangeEquity(c *gin.Context) {
 			result, err = poker.CalculateStudEquity(yourHand, opponentHand, knownDeadCards, gameType, 1000)
 		case "accurate":
 			result, err = poker.CalculateStudEquity(yourHand, opponentHand, knownDeadCards, gameType, 10000)
+		case "very_accurate":
+			result, err = poker.CalculateStudEquity(yourHand, opponentHand, knownDeadCards, gameType, 20000)
+		case "extreme":
+			result, err = poker.CalculateStudEquity(yourHand, opponentHand, knownDeadCards, gameType, 30000)
 		default: // "normal"
 			result, err = poker.CalculateStudEquity(yourHand, opponentHand, knownDeadCards, gameType, 5000)
 		}
@@ -275,7 +284,6 @@ func CalculateStudRangeEquity(c *gin.Context) {
 			HighEquity:  totalHighEquity / float64(validHands),
 			LowEquity:   totalLowEquity / float64(validHands),
 			ScoopEquity: totalScoopEquity / float64(validHands),
-			NoLowProb:   0, // Would need to track this separately
 		}
 	}
 
@@ -327,11 +335,3 @@ func parseCards(cardStrs []string) ([]pkr.Card, error) {
 	return cards, nil
 }
 
-func calculateNoLowProbability(result *poker.Stud8EquityResult) float64 {
-	// This is a simplified calculation
-	// In a real implementation, you'd track this during simulation
-	if result.LowEquity < 0.1 {
-		return 100.0
-	}
-	return 0.0
-}

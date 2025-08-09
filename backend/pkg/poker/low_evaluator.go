@@ -107,8 +107,9 @@ func EvaluateStud8LowHand(cards []poker.Card) Stud8LowRank {
 // CompareRazzHands compares two Razz hands
 // Returns -1 if hand1 wins, 1 if hand2 wins, 0 if tie
 func CompareRazzHands(hand1, hand2 RazzRank) int {
-	// Compare each card position from lowest to highest
-	for i := 0; i < len(hand1.cards) && i < len(hand2.cards); i++ {
+	// Compare each card position from highest to lowest
+	// In Razz, we compare starting from the highest card (last in array)
+	for i := len(hand1.cards) - 1; i >= 0 && i < len(hand1.cards); i-- {
 		if hand1.cards[i] < hand2.cards[i] {
 			return -1 // hand1 is lower (better)
 		} else if hand1.cards[i] > hand2.cards[i] {
@@ -132,8 +133,8 @@ func CompareStud8LowHands(hand1, hand2 Stud8LowRank) int {
 		return 0 // Neither qualifies, it's a tie for low
 	}
 
-	// Both qualify, compare like Razz
-	for i := 0; i < len(hand1.cards) && i < len(hand2.cards); i++ {
+	// Both qualify, compare like Razz (from highest to lowest)
+	for i := len(hand1.cards) - 1; i >= 0 && i < len(hand1.cards); i-- {
 		if hand1.cards[i] < hand2.cards[i] {
 			return -1 // hand1 is lower (better)
 		} else if hand1.cards[i] > hand2.cards[i] {
