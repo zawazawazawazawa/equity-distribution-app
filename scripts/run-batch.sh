@@ -15,6 +15,7 @@
 #   -n <DB名>       : PostgreSQLデータベース名 (デフォルト: plo_equity)
 #   -M              : Monte Carloモードを有効にする
 #   -m <モード>     : Monte Carloの精度モード (FAST/NORMAL/ACCURATE、デフォルト: NORMAL)
+#   -j <ジョブ数>   : 並列ジョブ数 (デフォルト: CPU数)
 #   -A              : Adaptive samplingモードを有効にする
 #   -h              : ヘルプを表示
 
@@ -46,9 +47,10 @@ POSTGRES_DBNAME=${POSTGRES_DBNAME:-"plo_equity"}
 USE_MONTE_CARLO=false
 MONTE_CARLO_MODE="NORMAL"
 USE_ADAPTIVE_SAMPLING=false
+MAX_JOBS=""
 
 # コマンドライン引数の解析
-while getopts "l:d:D:N:H:p:u:P:n:Mm:Ah" opt; do
+while getopts "l:d:D:N:H:p:u:P:n:Mm:j:Ah" opt; do
   case $opt in
     l) LOG_FILE=$OPTARG ;;
     d) DATA_DIR=$OPTARG ;;
@@ -61,6 +63,7 @@ while getopts "l:d:D:N:H:p:u:P:n:Mm:Ah" opt; do
     n) POSTGRES_DBNAME=$OPTARG ;;
     M) USE_MONTE_CARLO=true ;;
     m) MONTE_CARLO_MODE=$OPTARG ;;
+    j) MAX_JOBS=$OPTARG ;;
     A) USE_ADAPTIVE_SAMPLING=true ;;
     h)
       echo "使用方法: $0 [オプション]"
@@ -76,6 +79,7 @@ while getopts "l:d:D:N:H:p:u:P:n:Mm:Ah" opt; do
       echo "  -n <DB名>       : PostgreSQLデータベース名 (デフォルト: plo_equity)"
       echo "  -M              : Monte Carloモードを有効にする"
       echo "  -m <モード>     : Monte Carloの精度モード (FAST/NORMAL/ACCURATE、デフォルト: NORMAL)"
+      echo "  -j <ジョブ数>   : 並列ジョブ数 (デフォルト: CPU数)"
       echo "  -A              : Adaptive samplingモードを有効にする"
       echo "  -h              : ヘルプを表示"
       exit 0
@@ -140,6 +144,20 @@ fi
 # ディレクトリ移動（ループの前に一度だけ実行）
 cd $(dirname $0)/..
 
+# バイナリを事前ビルド（go runの繰り返しコンパイルによるメモリ消費を回避）
+echo "バイナリをビルドしています..."
+if ! (cd backend && go build -o batch-processor batch/main.go); then
+  echo "エラー: バイナリのビルドに失敗しました" >&2
+  exit 1
+fi
+echo "ビルド完了"
+
+# スクリプト終了時にバイナリを削除
+cleanup() {
+  rm -f backend/batch-processor
+}
+trap cleanup EXIT
+
 # 各日付に対してバッチ処理を実行
 for ((i=0; i<DAYS_COUNT; i++)); do
   # 日付を生成
@@ -166,11 +184,14 @@ for ((i=0; i<DAYS_COUNT; i++)); do
   if [ "$USE_ADAPTIVE_SAMPLING" = "true" ]; then
     CMD_ARGS="$CMD_ARGS -adaptive"
   fi
-  
+  if [ -n "$MAX_JOBS" ]; then
+    CMD_ARGS="$CMD_ARGS -jobs $MAX_JOBS"
+  fi
+
   # バッチ処理の実行
   echo "$(date '+%Y-%m-%d %H:%M:%S') - 日付: $CURRENT_DATE の処理を開始します"
-  # backendディレクトリに移動してからバッチ処理を実行
-  if (cd backend && go run batch/main.go $CMD_ARGS); then
+  # 事前ビルド済みバイナリを使用（go runの繰り返しコンパイルを回避）
+  if (cd backend && ./batch-processor $CMD_ARGS); then
     echo "$(date '+%Y-%m-%d %H:%M:%S') - 日付: $CURRENT_DATE の処理が正常に完了しました。"
   else
     echo "$(date '+%Y-%m-%d %H:%M:%S') - エラー: 日付: $CURRENT_DATE の処理が失敗しました。次の日付に進みます。" >&2
