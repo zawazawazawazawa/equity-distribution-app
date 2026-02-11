@@ -30,6 +30,7 @@ node_modules/
 /frontend/dist
 /backend/build
 /backend/dist
+/backend/batch-processor
 
 # Logs
 *.log
