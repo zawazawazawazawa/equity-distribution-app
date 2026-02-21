@@ -160,6 +160,21 @@ func GetDailyQuizResultsByDate(db *sql.DB, date time.Time) ([]map[string]interfa
 	return results, nil
 }
 
+// GetLatestDailyQuizResultDate はdaily_quiz_resultsテーブルの最新日付を取得します
+func GetLatestDailyQuizResultDate(db *sql.DB) (time.Time, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var maxDate sql.NullTime
+	err := db.QueryRowContext(ctx, `SELECT MAX(date) FROM daily_quiz_results`).Scan(&maxDate)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to query latest date: %v", err)
+	}
+	if !maxDate.Valid {
+		return time.Time{}, fmt.Errorf("no data found in daily_quiz_results table")
+	}
+	return maxDate.Time, nil
+}
+
 // InsertDailyQuizResultsBatch は複数の計算結果を一括でPostgreSQLに保存します
 func InsertDailyQuizResultsBatch(db *sql.DB, results []DailyQuizResult) error {
 	if len(results) == 0 {
