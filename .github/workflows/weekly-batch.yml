@@ -15,16 +15,35 @@ on:
         default: '7'
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   batch:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: '1.23'
+
+      - name: Validate inputs
+        run: |
+          if [ -n "${INPUT_START_DATE}" ]; then
+            if ! echo "${INPUT_START_DATE}" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+              echo "ERROR: start_date must be in YYYY-MM-DD format"
+              exit 1
+            fi
+          fi
+          if ! echo "${INPUT_DAYS_COUNT}" | grep -qE '^[0-9]+$'; then
+            echo "ERROR: days_count must be a positive integer"
+            exit 1
+          fi
+        env:
+          INPUT_START_DATE: ${{ inputs.start_date }}
+          INPUT_DAYS_COUNT: ${{ inputs.days_count || '7' }}
 
       - name: Run migrations
         working-directory: backend
@@ -43,28 +62,35 @@ jobs:
       - name: Run batch processing
         working-directory: backend
         run: |
-          DAYS_COUNT="${{ inputs.days_count || '7' }}"
-          INPUT_DATE="${{ inputs.start_date }}"
-          if [ -n "${INPUT_DATE}" ]; then
-            START_DATE="${INPUT_DATE}"
+          DAYS_COUNT="${INPUT_DAYS_COUNT}"
+          if [ -n "${INPUT_START_DATE}" ]; then
+            START_DATE="${INPUT_START_DATE}"
           else
             START_DATE=$(date -d "+7 days" "+%Y-%m-%d")
           fi
           echo "Start date: ${START_DATE}"
           echo "Processing ${DAYS_COUNT} days..."
+          FAIL_COUNT=0
           for i in $(seq 0 $((DAYS_COUNT - 1))); do
             CURRENT_DATE=$(date -d "${START_DATE} + ${i} days" "+%Y-%m-%d")
             echo "===== Processing: ${CURRENT_DATE} ====="
-            ./batch-processor \
+            if ! ./batch-processor \
               -data data -date "${CURRENT_DATE}" \
               -adaptive -monte-carlo-mode ACCURATE -jobs 2 \
               -pg-host "${POSTGRES_HOST}" -pg-port 5432 \
               -pg-user "${POSTGRES_USER}" -pg-password "${POSTGRES_PASSWORD}" \
-              -pg-dbname "${POSTGRES_DBNAME}" \
-            || echo "ERROR: Failed for ${CURRENT_DATE}, continuing..."
+              -pg-dbname "${POSTGRES_DBNAME}"; then
+              echo "ERROR: Failed for ${CURRENT_DATE}, continuing..."
+              FAIL_COUNT=$((FAIL_COUNT + 1))
+            fi
           done
-          echo "===== All ${DAYS_COUNT} days processed ====="
+          echo "===== All ${DAYS_COUNT} days processed (${FAIL_COUNT} failures) ====="
+          if [ "${FAIL_COUNT}" -gt 0 ]; then
+            echo "::warning::${FAIL_COUNT} day(s) failed during batch processing"
+          fi
         env:
+          INPUT_START_DATE: ${{ inputs.start_date }}
+          INPUT_DAYS_COUNT: ${{ inputs.days_count || '7' }}
           POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
