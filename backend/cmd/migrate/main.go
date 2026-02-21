@@ -28,8 +28,9 @@ func main() {
 	dbName := getEnvOrDefault("POSTGRES_DBNAME", "plo_equity")
 
 	// データベース接続文字列を構築
-	databaseURL := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		user, password, host, port, dbName)
+	sslMode := getEnvOrDefault("POSTGRES_SSLMODE", "disable")
+	databaseURL := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		user, password, host, port, dbName, sslMode)
 
 	// マイグレーションインスタンスを作成
 	m, err := migrate.New(
@@ -140,6 +141,7 @@ func printUsage() {
 	fmt.Println("  POSTGRES_USER     (default: postgres)")
 	fmt.Println("  POSTGRES_PASSWORD (default: postgres)")
 	fmt.Println("  POSTGRES_DBNAME   (default: plo_equity)")
+	fmt.Println("  POSTGRES_SSLMODE  (default: disable)")
 }
 
 // 環境変数から文字列値を取得するヘルパー関数

@@ -43,8 +43,9 @@ func GetPostgresConnection(config PostgresConfig) (*sql.DB, error) {
 	password := getEnvOrDefault("POSTGRES_PASSWORD", config.Password)
 	dbName := getEnvOrDefault("POSTGRES_DBNAME", config.DBName)
 
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbName)
+	sslMode := getEnvOrDefault("POSTGRES_SSLMODE", "disable")
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbName, sslMode)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
