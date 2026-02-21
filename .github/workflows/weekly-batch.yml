@@ -3,7 +3,17 @@ name: Weekly Batch Processing
 on:
   schedule:
     - cron: '0 0 * * 5'  # 毎週金曜 0:00 UTC (日本時間 金曜 9:00)
-  workflow_dispatch:       # 手動実行も可能
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: '開始日 (YYYY-MM-DD)。未指定の場合は7日後から'
+        required: false
+        type: string
+      days_count:
+        description: '処理日数'
+        required: false
+        default: '7'
+        type: string
 
 jobs:
   batch:
@@ -33,10 +43,16 @@ jobs:
       - name: Run batch processing
         working-directory: backend
         run: |
-          START_DATE=$(date -d "+7 days" "+%Y-%m-%d")
+          DAYS_COUNT="${{ inputs.days_count || '7' }}"
+          INPUT_DATE="${{ inputs.start_date }}"
+          if [ -n "${INPUT_DATE}" ]; then
+            START_DATE="${INPUT_DATE}"
+          else
+            START_DATE=$(date -d "+7 days" "+%Y-%m-%d")
+          fi
           echo "Start date: ${START_DATE}"
-          echo "Processing 7 days..."
-          for i in $(seq 0 6); do
+          echo "Processing ${DAYS_COUNT} days..."
+          for i in $(seq 0 $((DAYS_COUNT - 1))); do
             CURRENT_DATE=$(date -d "${START_DATE} + ${i} days" "+%Y-%m-%d")
             echo "===== Processing: ${CURRENT_DATE} ====="
             ./batch-processor \
@@ -47,7 +63,7 @@ jobs:
               -pg-dbname "${POSTGRES_DBNAME}" \
             || echo "ERROR: Failed for ${CURRENT_DATE}, continuing..."
           done
-          echo "===== All 7 days processed ====="
+          echo "===== All ${DAYS_COUNT} days processed ====="
         env:
           POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
