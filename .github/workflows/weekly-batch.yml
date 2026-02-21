@@ -1,0 +1,61 @@
+name: Weekly Batch Processing
+
+on:
+  schedule:
+    - cron: '0 0 * * 5'  # 毎週金曜 0:00 UTC (日本時間 金曜 9:00)
+  workflow_dispatch:       # 手動実行も可能
+
+jobs:
+  batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Run migrations
+        working-directory: backend
+        run: go run cmd/migrate/main.go up
+        env:
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DBNAME: ${{ secrets.POSTGRES_DBNAME }}
+          POSTGRES_SSLMODE: require
+
+      - name: Build batch processor
+        working-directory: backend
+        run: go build -o batch-processor batch/main.go
+
+      - name: Run batch processing
+        working-directory: backend
+        run: |
+          START_DATE=$(date -d "+7 days" "+%Y-%m-%d")
+          echo "Start date: ${START_DATE}"
+          echo "Processing 7 days..."
+          for i in $(seq 0 6); do
+            CURRENT_DATE=$(date -d "${START_DATE} + ${i} days" "+%Y-%m-%d")
+            echo "===== Processing: ${CURRENT_DATE} ====="
+            ./batch-processor \
+              -data data -date "${CURRENT_DATE}" \
+              -adaptive -monte-carlo-mode ACCURATE -jobs 2 \
+              -pg-host "${POSTGRES_HOST}" -pg-port 5432 \
+              -pg-user "${POSTGRES_USER}" -pg-password "${POSTGRES_PASSWORD}" \
+              -pg-dbname "${POSTGRES_DBNAME}" \
+            || echo "ERROR: Failed for ${CURRENT_DATE}, continuing..."
+          done
+          echo "===== All 7 days processed ====="
+        env:
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DBNAME: ${{ secrets.POSTGRES_DBNAME }}
+          POSTGRES_SSLMODE: require
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          EnableImageUpload: "true"
