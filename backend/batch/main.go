@@ -129,6 +129,7 @@ type BatchConfig struct {
 	UseMonteCarloEquity bool   // Monte Carlo法を使用するか（false: exhaustive）
 	MonteCarloMode      string // Monte Carloの精度モード（FAST/NORMAL/ACCURATE）
 	UseAdaptiveSampling bool   // Adaptive samplingを使用するか
+	AutoNext            bool   // DBの最新日付+1日を自動的に対象とする
 }
 
 func main() {
@@ -167,7 +168,15 @@ func main() {
 
 	// 日付の処理
 	var targetDate time.Time
-	if config.Date == "" {
+	if config.AutoNext {
+		latestDate, err := db.GetLatestDailyQuizResultDate(pgDB)
+		if err != nil {
+			log.Fatalf("Failed to get latest date from DB: %v", err)
+		}
+		targetDate = latestDate.AddDate(0, 0, 1)
+		log.Printf("Auto-next mode: latest=%s, target=%s",
+			latestDate.Format("2006-01-02"), targetDate.Format("2006-01-02"))
+	} else if config.Date == "" {
 		// 日付が指定されていない場合は翌日の日付を使用
 		targetDate = time.Now().AddDate(0, 0, 1)
 	} else {
@@ -593,6 +602,7 @@ func parseFlags() *BatchConfig {
 	flag.BoolVar(&config.UseMonteCarloEquity, "monte-carlo", useMonteCarloEquity, "Use Monte Carlo equity calculation instead of exhaustive")
 	flag.StringVar(&config.MonteCarloMode, "monte-carlo-mode", monteCarloMode, "Monte Carlo accuracy mode (FAST/NORMAL/ACCURATE)")
 	flag.BoolVar(&config.UseAdaptiveSampling, "adaptive", useAdaptiveSampling, "Use adaptive sampling for hand vs range calculation")
+	flag.BoolVar(&config.AutoNext, "auto-next", false, "Automatically use latest DB date + 1 day as target date")
 
 	flag.Parse()
 
