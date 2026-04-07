@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Equity Calculator Debug Interface</title>
+    <link rel="stylesheet" href="/static/css/debug.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Equity Calculator Debug Interface</h1>
+        
+        <div class="game-selector">
+            <label for="gameType">Game Type:</label>
+            <select id="gameType" onchange="updateGameInterface()">
+                <option value="">Select a game...</option>
+                <optgroup label="PLO Games">
+                    <option value="plo4">PLO4 (Pot Limit Omaha 4-card)</option>
+                    <option value="plo5">PLO5 (Pot Limit Omaha 5-card)</option>
+                </optgroup>
+                <optgroup label="Stud Games">
+                    <option value="razz">Razz</option>
+                    <option value="stud_high">7-Card Stud High</option>
+                    <option value="stud_highlow8">7-Card Stud Hi-Lo 8</option>
+                </optgroup>
+            </select>
+        </div>
+
+        <!-- PLO Interface -->
+        <div id="ploInterface" class="game-interface" style="display: none;">
+            <h2>PLO Equity Calculator</h2>
+            
+            <div class="input-group">
+                <label>Your Hand:</label>
+                <div class="card-inputs">
+                    <input type="text" class="card-input" id="ploHand1" placeholder="As" maxlength="2">
+                    <input type="text" class="card-input" id="ploHand2" placeholder="Kd" maxlength="2">
+                    <input type="text" class="card-input" id="ploHand3" placeholder="Qh" maxlength="2">
+                    <input type="text" class="card-input" id="ploHand4" placeholder="Jc" maxlength="2">
+                    <input type="text" class="card-input" id="ploHand5" placeholder="5th card" maxlength="2" style="display: none;">
+                </div>
+            </div>
+            
+            <div class="input-group">
+                <label>Board:</label>
+                <div class="card-inputs">
+                    <input type="text" class="card-input" id="ploBoard1" placeholder="Flop 1" maxlength="2">
+                    <input type="text" class="card-input" id="ploBoard2" placeholder="Flop 2" maxlength="2">
+                    <input type="text" class="card-input" id="ploBoard3" placeholder="Flop 3" maxlength="2">
+                    <input type="text" class="card-input" id="ploBoard4" placeholder="Turn" maxlength="2">
+                    <input type="text" class="card-input" id="ploBoard5" placeholder="River" maxlength="2">
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>Opponent Range Type:</label>
+                <select id="ploOpponentType" onchange="updatePLOOpponentInput()">
+                    <option value="range">Range String</option>
+                    <option value="specific">Specific Hand</option>
+                </select>
+            </div>
+
+            <div id="ploRangeInput" class="input-group">
+                <label>Opponent Range:</label>
+                <textarea id="ploRange" rows="3" placeholder="e.g., AA**, KK**, QQ**, AKQ*"></textarea>
+            </div>
+
+            <div id="ploSpecificInput" class="input-group" style="display: none;">
+                <label>Opponent Hand:</label>
+                <div class="card-inputs">
+                    <input type="text" class="card-input" id="ploOpp1" placeholder="Card 1" maxlength="2">
+                    <input type="text" class="card-input" id="ploOpp2" placeholder="Card 2" maxlength="2">
+                    <input type="text" class="card-input" id="ploOpp3" placeholder="Card 3" maxlength="2">
+                    <input type="text" class="card-input" id="ploOpp4" placeholder="Card 4" maxlength="2">
+                    <input type="text" class="card-input" id="ploOpp5" placeholder="5th card" maxlength="2" style="display: none;">
+                </div>
+            </div>
+        </div>
+
+        <!-- Stud Interface -->
+        <div id="studInterface" class="game-interface" style="display: none;">
+            <h2>7-Card Stud Equity Calculator</h2>
+            
+            <div class="input-group">
+                <label>Your Cards:</label>
+                <div class="stud-cards">
+                    <div class="card-section">
+                        <span class="card-label">Down Cards:</span>
+                        <div class="card-inputs">
+                            <input type="text" class="card-input" id="studYourDown1" placeholder="1st" maxlength="2">
+                            <input type="text" class="card-input" id="studYourDown2" placeholder="2nd" maxlength="2">
+                            <input type="text" class="card-input" id="studYourDown3" placeholder="3rd" maxlength="2">
+                        </div>
+                    </div>
+                    <div class="card-section">
+                        <span class="card-label">Up Cards:</span>
+                        <div class="card-inputs">
+                            <input type="text" class="card-input" id="studYourUp1" placeholder="3rd St" maxlength="2">
+                            <input type="text" class="card-input" id="studYourUp2" placeholder="4th St" maxlength="2">
+                            <input type="text" class="card-input" id="studYourUp3" placeholder="5th St" maxlength="2">
+                            <input type="text" class="card-input" id="studYourUp4" placeholder="6th St" maxlength="2">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>Opponent Type:</label>
+                <select id="studOpponentType" onchange="updateStudOpponentInput()">
+                    <option value="single">Single Opponent</option>
+                    <option value="range">Multiple Opponents</option>
+                </select>
+            </div>
+
+            <div id="studSingleOpponent" class="input-group">
+                <label>Opponent Cards:</label>
+                <div class="stud-cards">
+                    <div class="card-section">
+                        <span class="card-label">Down Cards:</span>
+                        <div class="card-inputs">
+                            <input type="text" class="card-input" id="studOppDown1" placeholder="1st" maxlength="2">
+                            <input type="text" class="card-input" id="studOppDown2" placeholder="2nd" maxlength="2">
+                            <input type="text" class="card-input" id="studOppDown3" placeholder="3rd" maxlength="2">
+                        </div>
+                    </div>
+                    <div class="card-section">
+                        <span class="card-label">Up Cards:</span>
+                        <div class="card-inputs">
+                            <input type="text" class="card-input" id="studOppUp1" placeholder="3rd St" maxlength="2">
+                            <input type="text" class="card-input" id="studOppUp2" placeholder="4th St" maxlength="2">
+                            <input type="text" class="card-input" id="studOppUp3" placeholder="5th St" maxlength="2">
+                            <input type="text" class="card-input" id="studOppUp4" placeholder="6th St" maxlength="2">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="studRangeOpponents" class="input-group" style="display: none;">
+                <label>Opponent Hands (click + to add more):</label>
+                <div id="studOpponentsList">
+                    <!-- Dynamic opponent hands will be added here -->
+                </div>
+                <button type="button" onclick="addStudOpponent()" class="btn-add">+ Add Opponent</button>
+            </div>
+        </div>
+
+        <!-- Common Settings -->
+        <div id="commonSettings" class="settings" style="display: none;">
+            <div class="input-group">
+                <label for="precision">Calculation Precision:</label>
+                <select id="precision">
+                    <option value="fast">Fast (~1000 iterations)</option>
+                    <option value="normal" selected>Normal (~5000 iterations for Stud, ~10000 for PLO)</option>
+                    <option value="accurate">Accurate (~10000 iterations for Stud, ~100000 for PLO)</option>
+                    <option value="very_accurate">Very Accurate (~20000 iterations for Stud)</option>
+                    <option value="extreme">Extreme (~30000 iterations for Stud)</option>
+                    <option value="adaptive">Adaptive (convergence-based)</option>
+                </select>
+            </div>
+
+            <button id="calculateBtn" onclick="calculateEquity()" class="btn-calculate">Calculate Equity</button>
+        </div>
+
+        <!-- Results -->
+        <div id="results" class="results" style="display: none;">
+            <h2>Results</h2>
+            <div id="resultsContent"></div>
+        </div>
+
+        <!-- Error Messages -->
+        <div id="errorMessage" class="error-message" style="display: none;"></div>
+    </div>
+
+    <script src="/static/js/debug.js"></script>
+</body>
+</html>
